@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# SSL Certificates
+*.pem
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

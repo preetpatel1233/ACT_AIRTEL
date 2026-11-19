@@ -6,11 +6,20 @@ import sqlite3
 from datetime import datetime, timedelta
 from xml.sax.saxutils import escape
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 from flask import Flask, g, jsonify, request, send_file, render_template_string, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE, "geotrack.db")
+DB_PATH = os.environ.get("DATABASE_PATH", os.path.join(BASE, "geotrack.db"))
+
+SUPERADMIN_EMAIL = os.environ.get("SUPERADMIN_EMAIL", "preet31012005@gmail.com")
+SUPERADMIN_PASSWORD = os.environ.get("SUPERADMIN_PASSWORD", "Preet@123")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "geotrack_superadmin_auth_secret_2026")
@@ -145,8 +154,8 @@ def init_db():
     db.commit()
 
     # Seed or update Superadmin account
-    admin_email = "preet31012005@gmail.com"
-    admin_pass = "Preet@123"
+    admin_email = SUPERADMIN_EMAIL
+    admin_pass = SUPERADMIN_PASSWORD
     existing_admin = db.execute("SELECT id FROM users WHERE email = ? COLLATE NOCASE", (admin_email,)).fetchone()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if not existing_admin:
@@ -345,7 +354,7 @@ def admin_delete_user(uid):
     if not u:
         return jsonify(error="User not found"), 404
 
-    if u["email"].lower() == "preet31012005@gmail.com":
+    if u["email"].lower() == SUPERADMIN_EMAIL.lower():
         return jsonify(error="Cannot delete primary superadmin"), 400
 
     db.execute("DELETE FROM users WHERE id = ?", (uid,))
@@ -1084,18 +1093,22 @@ if __name__ == "__main__":
     except OSError:
         ip = "<your-pc-ip>"
 
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 5000))
+    debug = os.environ.get("FLASK_DEBUG", "True").lower() in ("true", "1", "yes")
+
     print(f"\n  ✅ GeoTrack is running!")
-    print(f"  On PC  :  http://localhost:5000")
-    print(f"  On Phone:  http://{ip}:5000")
+    print(f"  On PC  :  http://localhost:{port}")
+    print(f"  On Phone:  http://{ip}:{port}")
     print()
     print(f"  📱 To enable GPS on your phone (one-time setup):")
     print(f"     1. Open Chrome on phone")
     print(f"     2. Go to:  chrome://flags/#unsafely-treat-insecure-origin-as-secure")
-    print(f"     3. Paste:  http://{ip}:5000")
+    print(f"     3. Paste:  http://{ip}:{port}")
     print(f"     4. Set to 'Enabled', tap 'Relaunch'")
-    print(f"     5. Now open http://{ip}:5000 — GPS will work!\n")
+    print(f"     5. Now open http://{ip}:{port} — GPS will work!\n")
 
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host=host, port=port, debug=debug)
 else:
     init_db()
     purge_expired()
