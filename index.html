@@ -1,0 +1,2112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d47a1">
+<title>GeoTrack</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --pri:#0d47a1; --pri2:#1565c0; --bg:#eef2f7; --card:#fff; --txt:#1b2733; --mut:#6b7a8c; --red:#e53935; --ok:#2e7d32; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; overscroll-behavior:none; }
+  #app { height:100dvh; display:flex; flex-direction:column; max-width:640px; margin:0 auto; background:var(--bg); position:relative; }
+
+  /* Single Ultra-Compact Perfect Top Bar */
+  #topbar {
+    background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+    color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: calc(5px + env(safe-area-inset-top)) 10px 5px; min-height: 44px; box-sizing: border-box;
+    box-shadow: 0 2px 6px rgba(0,0,0,.18); z-index: 100;
+  }
+  #topbar.hidden { display:none; }
+  #showTopbarBtn {
+    display:none; position:absolute; top:calc(6px + env(safe-area-inset-top)); left:8px; z-index:1500;
+    background:var(--pri); color:#fff; border:1px solid rgba(255,255,255,.3); border-radius:16px;
+    padding:4px 10px; font-size:11px; font-weight:600; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.3);
+    align-items:center; gap:4px;
+  }
+  #topbar.hidden + #showTopbarBtn { display:inline-flex; }
+
+  .iconbtn {
+    background: rgba(255,255,255,.16); border: 0; color: #fff; width: 34px; height: 34px; border-radius: 50%;
+    font-size: 15px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none;
+    transition: background .15s, transform .1s;
+  }
+  .iconbtn:active { background: rgba(255,255,255,.3); transform: scale(0.93); }
+
+  .tabs {
+    display: inline-flex; background: rgba(0,0,0,.24); padding: 3px; border-radius: 20px;
+    gap: 3px; align-items: center; flex: none;
+  }
+  .tabbtn {
+    border: 0; background: none; color: rgba(255,255,255,.88); padding: 5px 14px; border-radius: 16px;
+    font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all .18s;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .tabbtn.on { background: #fff; color: var(--pri); box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+
+  /* Project popover dropdown */
+  .proj-popover {
+    position: fixed; top: calc(48px + env(safe-area-inset-top)); left: 10px;
+    background: #fff; border-radius: 14px; z-index: 3000; box-shadow: 0 8px 30px rgba(0,0,0,.28);
+    min-width: 230px; max-width: 290px; padding: 14px; display: none;
+    animation: popFade .15s ease-out;
+  }
+  .proj-popover.on { display: block; }
+  @keyframes popFade {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  main { flex:0 0 auto; max-height:48dvh; overflow-y:auto; padding:6px 10px 4px; -webkit-overflow-scrolling:touch; }
+  .screen { display:none; } .screen.on { display:block; }
+  .card { background:var(--card); border-radius:10px; padding:10px 12px; margin-bottom:6px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .card h3 { margin:0 0 6px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; text-align:center; }
+  .stats b { display:block; font-size:20px; color:var(--pri2); } .stats span { font-size:10px; color:var(--mut); }
+
+  label { display:block; font-size:11px; font-weight:600; color:var(--mut); margin:6px 0 2px; }
+  input, select { width:100%; font-size:15px; padding:8px 10px; border:1.5px solid #cfd8e3; border-radius:8px;
+    background:#fff; color:var(--txt); outline:none; box-sizing:border-box; }
+  input:focus, select:focus { border-color:var(--pri2); }
+  .row { display:flex; gap:8px; } .row > * { flex:1; min-width:0; }
+  .namewrap { display:flex; gap:6px; } .namewrap input { flex:1; }
+  .mic { width:42px; border:0; border-radius:8px; background:var(--pri2); color:#fff; font-size:18px; cursor:pointer; flex:none; }
+  .mic.rec { background:var(--red); animation:pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.55; } }
+
+  .btn { width:100%; border:0; border-radius:10px; padding:11px; font-size:15px; font-weight:700; cursor:pointer; color:#fff; background:var(--pri2); }
+  .btn.sec { background:#e3ebf5; color:var(--pri); }
+  .btn.ok { background:var(--ok); } .btn.red { background:var(--red); }
+  .btn:disabled { opacity:.5; }
+  .gps { margin-bottom:2px; }
+
+  .del { border:0; background:none; color:var(--red); font-size:18px; cursor:pointer; padding:6px; }
+  .hint { font-size:12px; color:var(--mut); margin:6px 0 0; }
+
+  #mapbox {
+    position:relative; flex:1; min-height:220px; background:#cfd8dc;
+    border-top:2px solid var(--pri2); display:flex;
+  }
+  #map { position:absolute; inset:0; }
+  #mapbox.big { position:fixed; inset:0; height:auto; z-index:2000; border:0; }
+  #expand, #layer, #liveGps {
+    position:absolute; z-index:1000; right:8px; width:36px; height:36px; border-radius:8px; border:0;
+    background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.35); font-size:17px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; transition:transform .1s, background .15s;
+  }
+  #expand:active, #layer:active, #liveGps:active { transform:scale(0.93); }
+  #expand { top:8px; }
+  #layer { top:50px; }
+  #liveGps { top:92px; }
+  #liveGps.active {
+    background:#e3f2fd; border:2px solid #1976d2; color:#1976d2;
+    animation:gpsPulse 1.8s infinite;
+  }
+  @keyframes gpsPulse {
+    0% { box-shadow:0 0 0 0 rgba(25, 118, 210, 0.6); }
+    70% { box-shadow:0 0 0 10px rgba(25, 118, 210, 0); }
+    100% { box-shadow:0 0 0 0 rgba(25, 118, 210, 0); }
+  }
+  #closebig { display:none; position:absolute; z-index:1001; left:8px; top:calc(8px + env(safe-area-inset-top)); padding:10px 16px; border:0; border-radius:20px; background:var(--pri); color:#fff; font-weight:700; }
+  #mapbox.big #closebig { display:block; }
+
+  #finishbar { padding:8px 14px calc(8px + env(safe-area-inset-bottom)); background:#fff; box-shadow:0 -1px 3px rgba(0,0,0,.08); }
+
+  /* Viewer Mode: hide all inputs, add tab, and modification controls */
+  body.viewer-mode button[data-tab="add"],
+  body.viewer-mode #s-add,
+  body.viewer-mode #finishbar,
+  body.viewer-mode #btnBin,
+  body.viewer-mode #btnRecycleBin,
+  body.viewer-mode #newProjCard,
+  body.viewer-mode .pdel,
+  body.viewer-mode .btn-del-search,
+  body.viewer-mode .btn-select-action {
+    display: none !important;
+  }
+
+  .landmark-label {
+    background:#ffffff; color:#0d47a1; font-weight:700; font-size:13px; line-height:1.2;
+    padding:3px 8px; border-radius:6px; border:1.5px solid #1565c0;
+    box-shadow:0 2px 6px rgba(0,0,0,.3); white-space:nowrap; pointer-events:auto; cursor:pointer;
+  }
+  .landmark-label:hover, .landmark-label:active { background:#e3ebf5; }
+  .leaflet-tooltip-top.landmark-label::before { border-top-color:#1565c0; }
+
+  .menu { position:fixed; top:calc(54px + env(safe-area-inset-top)); right:10px; background:#fff; border-radius:12px; z-index:3000;
+    box-shadow:0 6px 24px rgba(0,0,0,.28); min-width:230px; overflow:hidden; display:none; }
+  .menu.on { display:block; }
+  .menu button { display:flex; gap:12px; width:100%; border:0; background:#fff; padding:14px 16px; font-size:15px; color:var(--txt); text-align:left; border-bottom:1px solid #eef1f5; cursor:pointer; }
+  .menu button:active { background:#eef4fb; }
+
+  .overlay { position:fixed; inset:0; background:rgba(13,30,52,.55); z-index:4000; display:none; align-items:flex-end; justify-content:center; }
+  .overlay.on { display:flex; }
+  .sheet { background:#fff; width:100%; max-width:640px; border-radius:20px 20px 0 0; padding:18px 16px calc(18px + env(safe-area-inset-bottom)); max-height:88dvh; overflow-y:auto; }
+  .sheet h2 { margin:0 0 4px; font-size:20px; } .sheet p { margin:0 0 14px; color:var(--mut); font-size:13px; }
+  .proj { display:flex; align-items:center; gap:12px; padding:12px; border:1.5px solid #dbe3ec; border-radius:12px; margin-bottom:8px; cursor:pointer; }
+  .proj .ico { font-size:28px; } .proj .meta { flex:1; min-width:0; } .proj small { color:var(--mut); display:block; font-size:12px; }
+  .proj .pdel { border:0; background:none; color:var(--red); font-size:20px; cursor:pointer; padding:4px 8px; flex:none; }
+  .proj .prestore { border:0; background:var(--ok); color:#fff; font-size:12px; font-weight:700; border-radius:8px; padding:6px 12px; cursor:pointer; flex:none; }
+  .proj .pperm { border:0; background:var(--red); color:#fff; font-size:12px; font-weight:700; border-radius:8px; padding:6px 12px; cursor:pointer; flex:none; }
+  .proj.deleted { border-color:#ffcdd2; background:#fff5f5; }
+  .proj.deleted .ico { opacity:.5; }
+  .days-left { font-size:11px; color:var(--red); font-weight:600; }
+  .action-bar { display:flex; gap:8px; margin-top:8px; }
+  .action-bar .btn { flex:1; padding:12px 6px; font-size:14px; }
+  .reconnect-banner {
+    background:#fff8e1; border:1.5px dashed #f57c00; border-radius:8px; padding:8px 10px;
+    margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;
+    font-size:12px; color:#e65100;
+  }
+  .btn-cancel-rc {
+    border:0; background:#e65100; color:#fff; font-size:11px; font-weight:700;
+    border-radius:6px; padding:4px 8px; cursor:pointer; flex:none;
+  }
+  .badge-remark {
+    display:inline-block; background:#fff3e0; color:#e65100; border:1px solid #ffe0b2;
+    border-radius:4px; padding:1px 5px; font-size:10px; font-weight:600; margin-left:4px;
+  }
+  .search-item {
+    display:flex; align-items:center; justify-content:space-between; padding:10px 12px;
+    border:1px solid #e0e6ed; border-radius:8px; margin-bottom:6px; cursor:pointer; background:#fff;
+  }
+  .search-item:hover, .search-item:active { background:#e3ebf5; border-color:var(--pri2); }
+  .export-opt {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:12px 6px; border:2px solid #cfd8e3; border-radius:10px; cursor:pointer;
+    background:#fff; text-align:center; transition:.15s; user-select:none;
+  }
+  .export-opt.on {
+    border-color:var(--pri2); background:#e3ebf5; color:var(--pri); font-weight:700;
+  }
+  .app-card {
+    display:flex; align-items:center; gap:14px; padding:12px 14px;
+    border:1.5px solid #dbe3ec; border-radius:12px; margin-bottom:10px;
+    cursor:pointer; background:#fff; transition:.15s;
+  }
+  .app-card:hover, .app-card:active {
+    background:#e3ebf5; border-color:var(--pri2);
+  }
+  .toast { position:fixed; left:50%; bottom:90px; transform:translateX(-50%); background:#222; color:#fff; padding:10px 18px; border-radius:22px; font-size:14px; z-index:5000; opacity:0; transition:.25s; pointer-events:none; max-width:90%; text-align:center; }
+  .toast.on { opacity:1; }
+  .pending { background:#fff3e0; color:#e65100; border-radius:10px; padding:10px; font-size:13px; margin-bottom:12px; display:none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Ultra-Compact Perfect Top Bar -->
+  <header id="topbar">
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="iconbtn" id="btnProjectMenu" title="Active Project & Switch" aria-label="Project">📁</button>
+      <button class="iconbtn" id="btnProfileMenu" title="Account & Profile" aria-label="Account">👤</button>
+    </div>
+
+    <div class="tabs">
+      <button data-tab="add" class="tabbtn on">📍 Add</button>
+      <button data-tab="loop" class="tabbtn">🔁 Loop (<span id="tabCount">0</span>)</button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="iconbtn" id="dots" aria-label="Menu" title="Menu">&#8942;</button>
+      <button class="iconbtn" id="btnToggleBar" title="Hide top bar" aria-label="Hide bar">▲</button>
+    </div>
+  </header>
+  <button id="showTopbarBtn" title="Show top bar">📁 <span id="hMiniName">GeoTrack</span> ▼</button>
+
+  <!-- Project Popover Dropdown (shown on clicking 📁) -->
+  <div class="proj-popover" id="projPopover">
+    <div style="font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:0.6px;font-weight:700;margin-bottom:6px">Current Project</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;background:#f5f8fc;padding:8px 10px;border-radius:10px;border:1px solid #e0e8f2">
+      <span style="font-size:24px">📁</span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px">
+          <b id="popProjName" style="font-size:14.5px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GeoTrack</b>
+          <span id="popProjCode" style="font-size:11px;font-weight:800;padding:1px 6px;border-radius:6px;background:#e3f2fd;color:#0d47a1;letter-spacing:0.5px;cursor:pointer" title="Click to copy Project ID">#----</span>
+        </div>
+        <small id="popProjCount" style="color:var(--mut);font-size:11.5px">0 points recorded</small>
+      </div>
+    </div>
+    <button class="btn ok" id="btnCopyShareCode" style="width:100%;font-size:12.5px;padding:7px;margin-bottom:8px;display:none;align-items:center;justify-content:center;gap:6px;font-weight:700">
+      📋 Copy Share ID (<span id="btnCopyCodeText">#----</span>)
+    </button>
+    <button class="btn sec" id="btnPopSwitch" style="width:100%;font-size:13.5px;padding:9px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700">
+      🔄 Switch / Add project
+    </button>
+  </div>
+
+  <!-- User Profile Popover Dropdown (shown on clicking 👤) -->
+  <div class="proj-popover" id="profilePopover" style="left:48px">
+    <div style="font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:0.6px;font-weight:700;margin-bottom:6px">Signed In Account</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;background:#f5f8fc;padding:8px 10px;border-radius:10px;border:1px solid #e0e8f2">
+      <span id="popUserIcon" style="font-size:24px">👤</span>
+      <div style="flex:1;min-width:0">
+        <b id="popUserEmail" style="font-size:14px;color:var(--txt);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">user@example.com</b>
+        <span id="popUserRole" style="display:inline-block;margin-top:2px;font-size:10.5px;padding:1px 6px;border-radius:6px;font-weight:700;background:#e3f2fd;color:#1565c0">USER</span>
+      </div>
+    </div>
+    <div id="popAdminBlock" style="display:none;margin-bottom:8px">
+      <button class="btn sec" id="btnPopManageUsers" style="width:100%;font-size:13px;padding:8px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700">
+        👥 Manage Users
+      </button>
+    </div>
+    <button class="btn red" id="btnPopLogout" style="width:100%;font-size:13px;padding:8px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700">
+      🚪 Log Out
+    </button>
+  </div>
+
+  <main id="mainPanel">
+    <div class="pending" id="pending"></div>
+
+    <!-- ADD (DEFAULT SCREEN - ULTRA COMPACT) -->
+    <section class="screen on" id="s-add">
+      <div class="card">
+        <button class="btn gps" id="btnGps">🎯 Get LatLong</button>
+
+        <div class="row">
+          <div>
+            <label for="lat">Latitude</label>
+            <input id="lat" inputmode="decimal" placeholder="23.524650" autocomplete="off">
+          </div>
+          <div>
+            <label for="lng">Longitude</label>
+            <input id="lng" inputmode="decimal" placeholder="72.485500" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="row">
+          <div style="flex:1">
+            <label for="status">Status</label>
+            <select id="status">
+              <option value="1">1. Landmark + Line</option>
+              <option value="2">2. Line only</option>
+              <option value="3">3. End</option>
+            </select>
+          </div>
+          <div style="flex:1.2">
+            <label for="name">Name</label>
+            <div class="namewrap">
+              <input id="name" placeholder="Name / mic" autocomplete="off">
+              <button class="mic" id="btnMic" aria-label="Speak name">🎤</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:6px"></div>
+
+        <!-- Reconnect indicator banner (automatic static remark "Already added") -->
+        <div id="reconnectBanner" class="reconnect-banner" style="display:none">
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:12px">🔗 Connecting from Point #<span id="rcSeq"></span>: <span id="rcName"></span></div>
+            <div style="font-size:11px;color:#b71c1c;margin-top:2px">
+              ✓ Point #<span id="rcSeq2"></span> will be added to SQL/Excel as <b>"Already added"</b>.<br>
+              Enter your <b>NEW point</b> Lat, Long & Name below:
+            </div>
+          </div>
+          <button id="btnCancelReconnect" class="btn-cancel-rc" type="button" title="Cancel reconnection">✕ Cancel</button>
+        </div>
+
+        <!-- Action Bar: Previous | Search | Next -->
+        <div class="action-bar">
+          <button class="btn sec" id="btnPrev" type="button" title="Go to previous point">◀ Previous</button>
+          <button class="btn sec" id="btnSearch" type="button" title="Search point by name">🔍 Search</button>
+          <button class="btn ok" id="btnNext" type="button" title="Save and go next">Next ▶</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOOP -->
+    <section class="screen" id="s-loop">
+      <div class="card" style="margin-bottom:4px">
+        <h3 style="margin:0 0 6px">Project summary</h3>
+        <div class="stats">
+          <div><b id="stPts">0</b><span>Points</span></div>
+          <div><b id="stLm">0</b><span>Landmarks</span></div>
+          <div><b id="stLn">0</b><span>Lines</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Big Map occupying full available screen -->
+  <div id="mapbox">
+    <div id="map"></div>
+    <button id="closebig">✕ Close</button>
+    <button id="expand" aria-label="Big map" title="Toggle full screen">⛶</button>
+    <button id="layer" aria-label="Map type" title="Toggle Satellite / Street">🛰️</button>
+    <button id="liveGps" aria-label="Live GPS" title="Track Live GPS Location">🎯</button>
+  </div>
+
+  <div id="finishbar"><button class="btn red" id="btnFinish">🏁 Finish</button></div>
+</div>
+
+<div class="menu" id="menu">
+  <button data-act="switch">📁 Switch / New project</button>
+  <button data-act="export">📤 Export</button>
+  <button data-act="openapp">📱 Open in App</button>
+  <button data-act="manage-users" id="menuItemManageUsers" style="display:none;color:var(--pri);font-weight:700">👥 Manage Users</button>
+</div>
+
+<div class="overlay" id="projOverlay">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <h2 style="margin:0">GeoTrack</h2>
+      <button id="btnProjClose" style="border:0;background:none;font-size:22px;cursor:pointer;color:var(--mut);line-height:1;padding:4px 8px" aria-label="Close" title="Close">✕</button>
+    </div>
+    <p style="margin-top:0">Create a new project or continue an existing one.</p>
+    <button class="btn" id="btnNew">➕ New project</button>
+    <div style="height:14px"></div>
+    <div id="projList"></div>
+    <div style="height:10px"></div>
+    <button class="btn sec" id="btnRecycleBin" style="font-size:14px">🗑️ Recycle Bin</button>
+  </div>
+</div>
+
+<div class="overlay" id="recycleOverlay">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <h2 style="margin:0">🗑️ Recycle Bin</h2>
+      <button id="btnRecycleClose" style="border:0;background:none;font-size:22px;cursor:pointer;color:var(--mut);line-height:1;padding:4px 8px" aria-label="Close" title="Close">✕</button>
+    </div>
+    <p style="margin-top:0">Deleted projects are kept for 30 days. After that they are permanently removed.</p>
+    <div id="recycleList"></div>
+    <div style="height:14px"></div>
+    <button class="btn sec" id="btnRecycleBack">← Back to projects</button>
+  </div>
+</div>
+
+<div class="overlay" id="newOverlay">
+  <div class="sheet" style="max-width:440px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0;font-size:18px;color:var(--pri)">📁 Add / New Project</h2>
+      <button id="btnNewClose" style="border:0;background:none;font-size:22px;cursor:pointer;color:var(--mut);line-height:1">✕</button>
+    </div>
+
+    <!-- 2 OPTIONS TOGGLE -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#eef4fb;padding:4px;border-radius:12px;margin-bottom:16px;border:1px solid #dbe6f2">
+      <button id="tabOptionJoin" type="button" class="tab-opt-btn on" style="border:0;padding:10px 8px;border-radius:8px;font-size:13.5px;font-weight:700;cursor:pointer;background:#fff;color:var(--pri);box-shadow:0 1px 3px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center;gap:4px">
+        1️⃣ Existing project
+      </button>
+      <button id="tabOptionCreate" type="button" class="tab-opt-btn" style="border:0;padding:10px 8px;border-radius:8px;font-size:13.5px;font-weight:700;cursor:pointer;background:none;color:#455a64;display:flex;align-items:center;justify-content:center;gap:4px">
+        2️⃣ New project
+      </button>
+    </div>
+
+    <!-- 1. EXISTING PROJECT ADD (WITH 4-DIGIT ID STARTING WITH #) -->
+    <div id="panelJoinProject" style="display:block">
+      <p style="margin:0 0 10px;color:var(--mut);font-size:12.5px;line-height:1.4">
+        Enter the <b>4-digit Project ID</b> (e.g. <b>#1234</b>) sent to you by the owner to access their project.
+      </p>
+      <label for="inputProjectCode" style="margin-top:0;font-size:11px;font-weight:700;color:var(--txt)">Project ID (#XXXX)</label>
+      <div style="position:relative;margin-bottom:14px">
+        <input id="inputProjectCode" placeholder="#1234" maxlength="6" autocomplete="off"
+               style="font-size:20px;font-weight:800;letter-spacing:3px;text-align:center;padding:12px;border-radius:10px;background:#f9fbfd">
+      </div>
+      <div class="row">
+        <button class="btn sec" id="btnJoinCancel" type="button" style="flex:1">Cancel</button>
+        <button class="btn ok" id="btnJoinSubmit" type="button" style="flex:2;font-size:14.5px;font-weight:700">
+          🔗 Add Existing Project
+        </button>
+      </div>
+    </div>
+
+    <!-- 2. CREATE NEW PROJECT -->
+    <div id="panelCreateProject" style="display:none">
+      <p style="margin:0 0 10px;color:var(--mut);font-size:12.5px;line-height:1.4">
+        Create a new private project. A unique <b>4-digit ID (#XXXX)</b> will be generated so you can share it with others.
+      </p>
+      <label for="pname" style="margin-top:0;font-size:11px;font-weight:700;color:var(--txt)">Project Name</label>
+      <input id="pname" placeholder="e.g. Village Survey" autocomplete="off"
+             style="margin-bottom:14px;padding:11px 12px;font-size:14px;border-radius:10px">
+      <div class="row">
+        <button class="btn sec" id="btnNewCancel" type="button" style="flex:1">Cancel</button>
+        <button class="btn ok" id="btnNewCreate" type="button" style="flex:2;font-size:14.5px;font-weight:700">
+          ✨ Create New Project
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="exportOverlay">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0;font-size:18px;color:var(--pri)">📤 Export Project Data</h2>
+      <button id="btnExportClose" style="border:0;background:none;font-size:22px;cursor:pointer;color:var(--mut);line-height:1">✕</button>
+    </div>
+
+    <label style="font-size:12px;font-weight:700;color:var(--txt);margin-bottom:6px">1. Select Data:</label>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px" id="exportTypeGroup">
+      <div class="export-opt on" data-val="points">
+        <span style="font-size:20px;display:block;margin-bottom:2px">📍</span>
+        <b style="font-size:13px">Points</b>
+      </div>
+      <div class="export-opt" data-val="loop">
+        <span style="font-size:20px;display:block;margin-bottom:2px">➰</span>
+        <b style="font-size:13px">Loop</b>
+      </div>
+      <div class="export-opt" data-val="both">
+        <span style="font-size:20px;display:block;margin-bottom:2px">📦</span>
+        <b style="font-size:13px">Both</b>
+      </div>
+    </div>
+
+    <label for="exportFormatSelect" style="font-size:12px;font-weight:700;color:var(--txt);margin-bottom:6px">2. Select Format:</label>
+    <select id="exportFormatSelect" style="padding:10px 12px;font-size:15px;font-weight:600;margin-bottom:18px;border-radius:10px;border:1.5px solid #cfd8e3">
+      <option value="excel">📊 Excel (.xlsx)</option>
+      <option value="pdf">📄 PDF (.pdf)</option>
+    </select>
+
+    <div class="row">
+      <button class="btn sec" id="btnExportCancel" style="flex:1">Cancel</button>
+      <button class="btn ok" id="btnDoExport" style="flex:2;font-size:15px;font-weight:700">⬇️ Download File</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="openAppOverlay">
+  <div class="sheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0;font-size:18px;color:var(--pri)">📱 Open in App</h2>
+      <button id="btnOpenAppClose" style="border:0;background:none;font-size:22px;cursor:pointer;color:var(--mut);line-height:1">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--mut);margin:0 0 14px">Choose an app to open and view your project route:</p>
+
+    <div class="app-card" id="btnOpenGmaps">
+      <div style="font-size:30px;flex:none">📌</div>
+      <div style="flex:1">
+        <b style="font-size:15px;display:block;color:var(--txt)">Google Maps</b>
+        <small style="color:var(--mut);font-size:11.5px">Open latest coordinates in Google Maps</small>
+      </div>
+      <span style="font-size:18px;color:var(--pri2)">›</span>
+    </div>
+
+    <div class="app-card" id="btnOpenGearth">
+      <div style="font-size:30px;flex:none">🌍</div>
+      <div style="flex:1">
+        <b style="font-size:15px;display:block;color:var(--txt)">Google Earth</b>
+        <small style="color:var(--mut);font-size:11.5px">Download KML file to view 3D route in Google Earth</small>
+      </div>
+      <span style="font-size:18px;color:var(--pri2)">›</span>
+    </div>
+
+    <div style="height:10px"></div>
+    <button class="btn sec" id="btnOpenAppCancel">Cancel</button>
+  </div>
+</div>
+
+<div class="overlay" id="searchOverlay">
+  <div class="sheet">
+    <h2>🔍 Search Existing Point</h2>
+    <p>Find a landmark to reconnect and continue your line from there.</p>
+    <input id="searchQuery" placeholder="Type name or point #..." autocomplete="off">
+    <div style="height:10px"></div>
+    <div id="searchList" style="max-height:50vh;overflow-y:auto"></div>
+    <div style="height:12px"></div>
+    <button class="btn sec" id="btnSearchClose">Cancel</button>
+  </div>
+</div>
+
+<div class="overlay" id="loopOverlay">
+  <div class="sheet" style="max-height:92dvh;display:flex;flex-direction:column;padding:16px 14px">
+    <!-- Header with Point info & close button -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div>
+        <h2 id="loopModalTitle" style="margin:0 0 2px;font-size:18px;color:var(--pri)">➰ Fill Loop Details</h2>
+        <div style="font-size:12px;color:var(--mut);font-weight:600">
+          Point #<span id="loopPtSeq"></span>: <b id="loopPtName" style="color:var(--txt)"></b>
+          &nbsp;·&nbsp; <span id="loopPtCoords" style="font-size:11px"></span>
+        </div>
+      </div>
+      <button id="btnLoopClose" style="border:0;background:none;font-size:24px;cursor:pointer;color:var(--mut);line-height:1;padding:0 4px">✕</button>
+    </div>
+
+    <!-- PART 1: Input Loop Number -->
+    <div id="loopCountInputContainer" style="background:#e3ebf5;border:1.5px solid #bbdefb;border-radius:10px;padding:10px 12px;margin-bottom:10px;flex:none">
+      <label for="inputLoopCount" style="margin:0 0 4px;font-size:12px;font-weight:700;color:var(--pri)">
+        1️⃣ Number of Loops:
+      </label>
+      <div style="display:flex;gap:10px;align-items:center">
+        <input id="inputLoopCount" type="number" min="1" max="50" value="1"
+               style="font-size:18px;font-weight:800;text-align:center;width:80px;padding:6px;border-radius:8px;background:#fff">
+        <span style="font-size:11.5px;color:var(--txt)">Enter number of loops to generate boxes below (e.g. 3 creates 3 boxes)</span>
+      </div>
+    </div>
+
+    <!-- PART 2: Red Drum ID Left Right & White Drum ID Left Right (Dynamic Boxes) -->
+    <div id="loopBoxesContainer" style="flex:1;overflow-y:auto;padding-right:2px;margin-bottom:10px;-webkit-overflow-scrolling:touch">
+      <!-- Dynamic Loop Boxes generated by JavaScript -->
+    </div>
+
+    <!-- PART 3: Done Button -->
+    <div style="padding-top:8px;border-top:1px solid #e0e6ed;display:flex;gap:8px;flex:none">
+      <button class="btn sec" id="btnLoopCancel" style="flex:1;padding:12px 6px">Cancel</button>
+      <button class="btn ok" id="btnLoopDone" style="flex:2;padding:12px 6px;font-size:15px;font-weight:700">
+        💾 Done
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN OVERLAY (REQUIRED FOR ENTRY) -->
+<div class="overlay on" id="loginOverlay" style="z-index:9000;background:rgba(10,25,47,0.92);backdrop-filter:blur(6px)">
+  <div class="sheet" style="max-width:380px;border-radius:20px;padding:24px 20px;margin:auto">
+    <div style="text-align:center;margin-bottom:18px">
+      <div style="font-size:38px;margin-bottom:4px">🔐</div>
+      <h2 style="margin:0 0 4px;font-size:20px;color:var(--pri)">Sign in to GeoTrack</h2>
+      <p style="margin:0;font-size:12.5px;color:var(--mut)">Enter your account email and password</p>
+    </div>
+
+    <form id="formLogin" onsubmit="return false">
+      <label for="loginEmail" style="font-size:11px;font-weight:700">Account / Email</label>
+      <input id="loginEmail" type="text" placeholder="name@example.com" autocomplete="username" required
+             style="margin-bottom:12px;padding:10px 12px;font-size:14px">
+
+      <label for="loginPassword" style="font-size:11px;font-weight:700">Password</label>
+      <div style="position:relative;margin-bottom:18px">
+        <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password" required
+               style="padding:10px 38px 10px 12px;font-size:14px">
+        <button type="button" id="btnToggleLoginPwd"
+                style="position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:16px;cursor:pointer;color:var(--mut)">
+          👁️
+        </button>
+      </div>
+
+      <div id="loginError" style="display:none;background:#ffebee;color:#c62828;padding:8px 10px;border-radius:8px;font-size:12px;margin-bottom:14px;border:1px solid #ffcdd2"></div>
+
+      <button class="btn ok" id="btnLoginSubmit" type="submit" style="font-size:15px;font-weight:700;padding:12px">
+        🔐 Sign In
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- USER MANAGEMENT OVERLAY (SUPERADMIN ONLY) -->
+<div class="overlay" id="userManagementOverlay" style="z-index:7000">
+  <div class="sheet" style="max-height:88dvh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 style="margin:0;font-size:18px;color:var(--pri)">👥 Manage Users</h2>
+      <button id="btnCloseUserMgmt" style="border:0;background:none;font-size:22px;cursor:pointer;color:var(--mut);line-height:1">✕</button>
+    </div>
+
+    <!-- Create User Card -->
+    <div class="card" style="background:#eef4fb;border:1.5px solid #bbdefb;padding:12px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:13px;color:var(--pri);margin-bottom:8px">➕ Create New Account</div>
+      <div class="row" style="margin-bottom:8px">
+        <div>
+          <label style="margin:0 0 2px;font-size:10px;font-weight:700">Account / Email</label>
+          <input id="newAccEmail" placeholder="user@gmail.com" autocomplete="off" style="padding:7px 9px;font-size:13px">
+        </div>
+        <div>
+          <label style="margin:0 0 2px;font-size:10px;font-weight:700">Password</label>
+          <input id="newAccPassword" type="password" placeholder="Min 4 chars" autocomplete="off" style="padding:7px 9px;font-size:13px">
+        </div>
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <div>
+          <label style="margin:0 0 2px;font-size:10px;font-weight:700">Role</label>
+          <select id="newAccRole" style="padding:7px 9px;font-size:13px">
+            <option value="user">User (Standard)</option>
+            <option value="superadmin">Superadmin</option>
+            <option value="viewer">Viewer (Read-only)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn ok" id="btnCreateNewUser" style="padding:8px 12px;font-size:13px;font-weight:700;height:38px">
+            Create Account
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Existing Accounts List -->
+    <div style="font-weight:700;font-size:13px;color:var(--txt);margin-bottom:8px">Existing Accounts</div>
+    <div id="usersListContainer" style="max-height:40vh;overflow-y:auto"></div>
+
+    <div style="height:12px"></div>
+    <button class="btn sec" id="btnUserMgmtCancel">Close</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+let project = null;            // {id,name,created_at,closed_loop}
+let points = [], segments = [];
+
+/* ---------- helpers ---------- */
+function toast(msg, ms = 2200) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), ms);
+}
+async function api(url, opts = {}) {
+  const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = j.error || (r.status === 404 ? 'Route not found (404) - Please restart python app.py' : ('Request failed (' + r.status + ')'));
+    throw Object.assign(new Error(msg), { status: r.status });
+  }
+  return j;
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  if (currentUser && currentUser.role === 'viewer') {
+    name = 'loop';
+  }
+  $$('.tabbtn').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  $$('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + name));
+  $('#mainPanel').scrollTop = 0;
+  setTimeout(() => { map.invalidateSize(); fitMap(); }, 60);
+  setTimeout(() => { map.invalidateSize(); }, 200);
+}
+$$('.tabbtn').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+/* ---------- topbar toggle (hide/show) ---------- */
+$('#btnToggleBar').onclick = () => {
+  $('#topbar').classList.add('hidden');
+  setTimeout(() => map.invalidateSize(), 100);
+};
+$('#showTopbarBtn').onclick = () => {
+  $('#topbar').classList.remove('hidden');
+  setTimeout(() => map.invalidateSize(), 100);
+};
+
+/* ---------- map ---------- */
+const map = L.map('map', { zoomControl: false, attributionControl: false, maxZoom: 21 }).setView([22.5, 79], 4);
+const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 21 });
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: 21 });
+let useSat = true; sat.addTo(map);
+const group = L.layerGroup().addTo(map);
+
+$('#layer').onclick = () => {
+  if (useSat) { map.removeLayer(sat); osm.addTo(map); } else { map.removeLayer(osm); sat.addTo(map); }
+  useSat = !useSat;
+};
+function setBig(on) {
+  $('#mapbox').classList.toggle('big', on);
+  setTimeout(() => { map.invalidateSize(); fitMap(); }, 80);
+}
+$('#expand').onclick = () => setBig(true);
+$('#closebig').onclick = () => setBig(false);
+
+/* ---------- live GPS tracker on map ---------- */
+let liveWatchId = null;
+let liveMarker = null;
+let liveCircle = null;
+const liveLayerGroup = L.layerGroup().addTo(map);
+
+function stopLiveGps() {
+  if (liveWatchId !== null) {
+    navigator.geolocation.clearWatch(liveWatchId);
+    liveWatchId = null;
+  }
+  liveLayerGroup.clearLayers();
+  liveMarker = null;
+  liveCircle = null;
+  $('#liveGps').classList.remove('active');
+  $('#liveGps').title = 'Track Live GPS Location';
+}
+
+function updateLiveGps(pos, panTo = false) {
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+  const acc = Math.round(pos.coords.accuracy || 0);
+
+  if (!liveMarker) {
+    liveCircle = L.circle([lat, lng], {
+      radius: acc,
+      color: '#1976d2',
+      weight: 1.5,
+      fillColor: '#2196f3',
+      fillOpacity: 0.16
+    }).addTo(liveLayerGroup);
+
+    liveMarker = L.circleMarker([lat, lng], {
+      radius: 9,
+      color: '#ffffff',
+      weight: 3,
+      fillColor: '#1976d2',
+      fillOpacity: 1
+    }).addTo(liveLayerGroup);
+
+    liveMarker.bindTooltip('📍 Live Location (±' + acc + 'm)', {
+      permanent: false,
+      direction: 'top',
+      offset: [0, -8]
+    });
+  } else {
+    liveMarker.setLatLng([lat, lng]);
+    liveCircle.setLatLng([lat, lng]);
+    liveCircle.setRadius(acc);
+    liveMarker.setTooltipContent('📍 Live Location (±' + acc + 'm)');
+  }
+
+  if (panTo) {
+    map.setView([lat, lng], Math.max(map.getZoom(), 17));
+  }
+}
+
+$('#liveGps').onclick = () => {
+  if (liveWatchId !== null) {
+    stopLiveGps();
+    toast('Live GPS stopped');
+    return;
+  }
+
+  if (!navigator.geolocation) {
+    return toast('Geolocation not supported by your device');
+  }
+
+  $('#liveGps').classList.add('active');
+  $('#liveGps').title = 'Tracking live location (Tap to stop)';
+  toast('Locating live GPS...');
+
+  let firstFix = true;
+  liveWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      updateLiveGps(pos, firstFix);
+      if (firstFix) {
+        toast('🎯 Live GPS locked (±' + Math.round(pos.coords.accuracy || 0) + 'm)');
+        firstFix = false;
+      }
+    },
+    err => {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          updateLiveGps(pos, true);
+          toast('🎯 Live location locked (±' + Math.round(pos.coords.accuracy || 0) + 'm)');
+        },
+        fallbackErr => {
+          stopLiveGps();
+          toast('GPS error: ' + (err.message || 'Location unavailable'));
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+      );
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 4000 }
+  );
+};
+
+function fitMap() {
+  if (!points.length) return;
+  const b = L.latLngBounds(points.map(p => [p.latitude, p.longitude]));
+  map.fitBounds(b, { padding: [30, 30], maxZoom: 19 });
+}
+function drawMap(refit = true) {
+  group.clearLayers();
+  segments.forEach(seg => L.polyline(seg, { color: '#29b6f6', weight: 4, opacity: .95 }).addTo(group));
+  points.forEach(p => {
+    const isLandmark = (p.status === 1 || p.status === 3);
+    const m = L.circleMarker([p.latitude, p.longitude], {
+      radius: isLandmark ? 8 : 6,
+      color: '#ffffff',
+      weight: 2.5,
+      fillColor: isLandmark ? '#e53935' : '#1565c0',
+      fillOpacity: 1
+    }).addTo(group);
+
+    /* Show the landmark NAME permanently on the map, with loop indicator if loops exist */
+    const baseName = (p.name && p.name.trim()) ? p.name.trim() : '#' + p.seq;
+    const loopBadge = p.loop_count ? ' <span style="color:#e65100;font-size:11px">➰(' + p.loop_count + ')</span>' : '';
+    const labelText = baseName + loopBadge;
+
+    m.bindTooltip(labelText, {
+      permanent: isLandmark,
+      direction: 'top',
+      className: 'landmark-label',
+      offset: [0, -8],
+      interactive: true
+    });
+
+    /* Clicking the point marker opens the Fill Loop popup */
+    m.on('click', () => openFillLoopModal(p));
+  });
+  if (refit) fitMap();
+}
+
+/* ---------- project load / render ---------- */
+async function loadProject(refit = true) {
+  const d = await api('/api/projects/' + project.id);
+  project = d.project; points = d.points; segments = d.segments;
+  render(); drawMap(refit);
+}
+function render() {
+  const pName = project ? project.name : 'GeoTrack';
+  const pCode = (project && project.share_code) ? project.share_code : '';
+  const pCount = points.length;
+  if ($('#hName')) $('#hName').textContent = pName;
+  if ($('#hMiniName')) $('#hMiniName').textContent = pName + (pCode ? ' (' + pCode + ')' : '');
+  if ($('#popProjName')) $('#popProjName').textContent = pName;
+  if ($('#popProjCode')) {
+    $('#popProjCode').textContent = pCode || '#----';
+    $('#popProjCode').style.display = pCode ? 'inline-block' : 'none';
+  }
+  if ($('#btnCopyCodeText')) $('#btnCopyCodeText').textContent = pCode || '#----';
+  if ($('#btnCopyShareCode')) $('#btnCopyShareCode').style.display = pCode ? 'flex' : 'none';
+  if ($('#popProjCount')) $('#popProjCount').textContent = pCount + ' point' + (pCount === 1 ? '' : 's') + ' recorded';
+  if ($('#hCount')) $('#hCount').textContent = pCount;
+  if ($('#tabCount')) $('#tabCount').textContent = pCount;
+  if ($('#stPts')) $('#stPts').textContent = pCount;
+  if ($('#stLm')) $('#stLm').textContent = points.filter(p => p.status !== 2).length;
+  if ($('#stLn')) $('#stLn').textContent = segments.length;
+}
+
+/* ---------- project picker ---------- */
+async function openPicker() {
+  const [list, bin] = await Promise.all([
+    api('/api/projects').catch(() => []),
+    api('/api/recycle-bin').catch(() => [])
+  ]);
+  $('#btnRecycleBin').textContent = '🗑️ Recycle Bin' + (bin.length ? ' (' + bin.length + ')' : '');
+  $('#projList').innerHTML = list.length ? '<label style="margin-top:0">Your projects</label>' + list.map(p => `
+    <div class="proj" data-id="${p.id}"><span class="ico">📁</span>
+      <div class="meta">
+        <div style="display:flex;align-items:center;gap:6px">
+          <b>${esc(p.name)}</b>
+          ${p.share_code ? `<span style="font-size:11px;font-weight:800;padding:1px 6px;border-radius:4px;background:#e3f2fd;color:#0d47a1;letter-spacing:0.5px">${esc(p.share_code)}</span>` : ''}
+        </div>
+        <small>${p.count} points · ${esc(p.created_at)}</small>
+      </div>
+      <button class="pdel" data-del="${p.id}" aria-label="Delete" title="Remove / Move to recycle bin">🗑</button>
+      <span>›</span></div>`).join('') : `
+    <div style="text-align:center;padding:26px 12px;background:#f9fbfd;border-radius:12px;border:1.5px dashed #cfd8e3;margin:8px 0">
+      <div style="font-size:32px;margin-bottom:6px">🔒</div>
+      <b style="font-size:14px;color:var(--txt);display:block;margin-bottom:4px">No Projects Added Yet</b>
+      <span style="font-size:12px;color:var(--mut);display:block;line-height:1.4">
+        Projects are completely private.<br>
+        Ask the owner for their <b>4-digit Project ID (#XXXX)</b> and tap <b>Existing project</b> above to access it!
+      </span>
+    </div>
+  `;
+  /* open project */
+  $$('.proj').forEach(el => {
+    el.onclick = async (e) => {
+      if (e.target.closest('.pdel')) return;
+      const p = list.find(x => x.id == el.dataset.id);
+      project = p;
+      localStorage.setItem(getActivePidKey(), p.id);
+      await loadProject();
+      $('#projOverlay').classList.remove('on');
+      showTab(currentUser && currentUser.role === 'viewer' ? 'loop' : 'add');
+    };
+  });
+  /* delete project (soft) */
+  $$('.pdel').forEach(b => b.onclick = async (e) => {
+    e.stopPropagation();
+    const p = list.find(x => x.id == b.dataset.del);
+    if (!confirm('Remove / Move "' + p.name + '" to recycle bin?')) return;
+    await api('/api/projects/' + b.dataset.del, { method: 'DELETE' });
+    if (project && project.id == b.dataset.del) {
+      localStorage.removeItem(getActivePidKey());
+      project = null; points = []; segments = []; render(); drawMap(false);
+    }
+    toast('Project removed');
+    openPicker();
+  });
+  $('#projOverlay').classList.add('on');
+}
+
+/* ---------- recycle bin ---------- */
+async function openRecycleBin() {
+  const bin = await api('/api/recycle-bin');
+  if (!bin.length) {
+    $('#recycleList').innerHTML = '<p style="text-align:center;color:var(--mut);padding:20px 0">Recycle bin is empty</p>';
+  } else {
+    $('#recycleList').innerHTML = bin.map(p => `
+      <div class="proj deleted" data-id="${p.id}"><span class="ico">🗑️</span>
+        <div class="meta"><b>${esc(p.name)}</b>
+          <small>${p.count} points · Deleted ${esc(p.deleted_at)}</small>
+          <span class="days-left">${p.days_left} day${p.days_left !== 1 ? 's' : ''} left</span>
+        </div>
+        <button class="prestore" data-restore="${p.id}">Restore</button>
+        <button class="pperm" data-perm="${p.id}">Delete</button>
+      </div>`).join('');
+    /* restore */
+    $$('.prestore').forEach(b => b.onclick = async (e) => {
+      e.stopPropagation();
+      await api('/api/recycle-bin/' + b.dataset.restore + '/restore', { method: 'POST' });
+      toast('Project restored ✔');
+      openRecycleBin();
+    });
+    /* permanent delete */
+    $$('.pperm').forEach(b => b.onclick = async (e) => {
+      e.stopPropagation();
+      const p = bin.find(x => x.id == b.dataset.perm);
+      if (!confirm('PERMANENTLY delete "' + p.name + '" and all its points?\n\nThis cannot be undone!')) return;
+      await api('/api/recycle-bin/' + b.dataset.perm, { method: 'DELETE' });
+      toast('Permanently deleted');
+      openRecycleBin();
+    });
+  }
+  $('#projOverlay').classList.remove('on');
+  $('#recycleOverlay').classList.add('on');
+}
+$('#btnRecycleBin').onclick = openRecycleBin;
+$('#btnRecycleBack').onclick = () => { $('#recycleOverlay').classList.remove('on'); openPicker(); };
+if ($('#btnProjClose')) $('#btnProjClose').onclick = () => $('#projOverlay').classList.remove('on');
+$('#projOverlay').onclick = (e) => { if (e.target === $('#projOverlay')) $('#projOverlay').classList.remove('on'); };
+if ($('#btnRecycleClose')) $('#btnRecycleClose').onclick = () => $('#recycleOverlay').classList.remove('on');
+$('#recycleOverlay').onclick = (e) => { if (e.target === $('#recycleOverlay')) $('#recycleOverlay').classList.remove('on'); };
+
+/* ---------- Add / New Project Modal logic (Existing project vs New project) ---------- */
+function switchNewProjectTab(which) {
+  const isJoin = which === 'join';
+  $('#tabOptionJoin').classList.toggle('on', isJoin);
+  $('#tabOptionJoin').style.background = isJoin ? '#fff' : 'none';
+  $('#tabOptionJoin').style.color = isJoin ? 'var(--pri)' : '#455a64';
+  $('#tabOptionJoin').style.boxShadow = isJoin ? '0 1px 3px rgba(0,0,0,.12)' : 'none';
+
+  $('#tabOptionCreate').classList.toggle('on', !isJoin);
+  $('#tabOptionCreate').style.background = !isJoin ? '#fff' : 'none';
+  $('#tabOptionCreate').style.color = !isJoin ? 'var(--pri)' : '#455a64';
+  $('#tabOptionCreate').style.boxShadow = !isJoin ? '0 1px 3px rgba(0,0,0,.12)' : 'none';
+
+  $('#panelJoinProject').style.display = isJoin ? 'block' : 'none';
+  $('#panelCreateProject').style.display = !isJoin ? 'block' : 'none';
+
+  if (isJoin) {
+    $('#inputProjectCode').value = '';
+    setTimeout(() => $('#inputProjectCode').focus(), 150);
+  } else {
+    $('#pname').value = '';
+    setTimeout(() => $('#pname').focus(), 150);
+  }
+}
+
+$('#tabOptionJoin').onclick = () => switchNewProjectTab('join');
+$('#tabOptionCreate').onclick = () => switchNewProjectTab('create');
+if ($('#btnNewClose')) $('#btnNewClose').onclick = () => $('#newOverlay').classList.remove('on');
+if ($('#btnJoinCancel')) $('#btnJoinCancel').onclick = () => $('#newOverlay').classList.remove('on');
+
+// Auto-prefix # when typing code
+$('#inputProjectCode').oninput = (e) => {
+  let v = e.target.value.replace(/[^0-9#]/g, '');
+  if (v.length > 0 && !v.startsWith('#')) {
+    v = '#' + v.replace(/#/g, '');
+  }
+  e.target.value = v;
+};
+
+// 1. Add Existing Project with 4-Digit ID
+$('#btnJoinSubmit').onclick = async () => {
+  let code = $('#inputProjectCode').value.trim();
+  if (!code) return toast('Please enter the 4-digit project ID (e.g. #1234)');
+  if (!code.startsWith('#')) code = '#' + code;
+
+  const btn = $('#btnJoinSubmit');
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Adding project...';
+
+    const res = await api('/api/projects/join', {
+      method: 'POST',
+      body: JSON.stringify({ code })
+    });
+
+    if (res.ok && res.project) {
+      project = res.project;
+      localStorage.setItem(getActivePidKey(), project.id);
+      $('#newOverlay').classList.remove('on');
+      $('#projOverlay').classList.remove('on');
+      await loadProject();
+      showTab(currentUser && currentUser.role === 'viewer' ? 'loop' : 'add');
+      toast('✅ ' + (res.message || 'Project added!'));
+    }
+  } catch (err) {
+    toast('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔗 Add Existing Project';
+  }
+};
+
+// 2. Create Brand New Project
+$('#btnNew').onclick = () => {
+  $('#newOverlay').classList.add('on');
+  switchNewProjectTab('join'); // default to 1. Existing project add
+};
+$('#btnNewCancel').onclick = () => $('#newOverlay').classList.remove('on');
+
+$('#btnNewCreate').onclick = async () => {
+  const name = $('#pname').value.trim();
+  if (!name) return toast('Enter a project name');
+  const btn = $('#btnNewCreate');
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    const r = await api('/api/projects', { method: 'POST', body: JSON.stringify({ name }) });
+    project = { id: r.id, name: r.name, share_code: r.share_code, closed_loop: 0 };
+    localStorage.setItem(getActivePidKey(), r.id);
+    $('#newOverlay').classList.remove('on');
+    $('#projOverlay').classList.remove('on');
+    await loadProject();
+    showTab('add');
+    toast('✨ Project created! Share ID: ' + r.share_code);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Create New Project';
+  }
+};
+
+// Copy Share ID handlers
+if ($('#btnCopyShareCode')) {
+  $('#btnCopyShareCode').onclick = async () => {
+    if (!project || !project.share_code) return;
+    try {
+      await navigator.clipboard.writeText(project.share_code);
+      toast('📋 Copied project ID ' + project.share_code + ' to clipboard!');
+    } catch (_) {
+      prompt('Copy your Project ID to share with teammates:', project.share_code);
+    }
+  };
+}
+if ($('#popProjCode')) {
+  $('#popProjCode').onclick = async () => {
+    if (!project || !project.share_code) return;
+    try {
+      await navigator.clipboard.writeText(project.share_code);
+      toast('📋 Copied project ID ' + project.share_code + ' to clipboard!');
+    } catch (_) {
+      prompt('Copy your Project ID to share with teammates:', project.share_code);
+    }
+  };
+}
+/* ---------- project popover ---------- */
+$('#btnProjectMenu').onclick = e => {
+  e.stopPropagation();
+  $('#menu').classList.remove('on');
+  $('#projPopover').classList.toggle('on');
+};
+$('#btnPopSwitch').onclick = () => {
+  $('#projPopover').classList.remove('on');
+  openPicker();
+};
+$('#projPopover').onclick = e => e.stopPropagation();
+
+
+/* ---------- GPS ---------- */
+/*  Works like Google Maps: accepts any reading the device gives,
+    then tries to refine. Never rejects a reading.
+    If high-accuracy GPS fails, auto-falls back to WiFi/cell location. */
+let gpsWatch = null;
+
+function showGpsHelp() {
+  const host = location.host;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay on';
+  overlay.innerHTML = `<div class="sheet">
+    <h2>📱 Enable GPS (one-time)</h2>
+    <p style="line-height:1.7">GPS needs a secure context. Follow these steps <b>once</b>:</p>
+    <ol style="font-size:14px;line-height:2;padding-left:20px;margin:0 0 16px">
+      <li>Open Chrome on this device</li>
+      <li>Go to address bar, type:<br><b style="color:var(--pri);user-select:all;font-size:13px">chrome://flags/#unsafely-treat-insecure-origin-as-secure</b></li>
+      <li>In the text box, paste:<br><b style="color:var(--pri);user-select:all">${location.protocol}//${host}</b></li>
+      <li>Set the dropdown to <b>Enabled</b></li>
+      <li>Tap <b>Relaunch</b> at the bottom</li>
+      <li>Open <b>${location.protocol}//${host}</b> again — GPS will work! ✅</li>
+    </ol>
+    <button class="btn" onclick="this.closest('.overlay').remove()">Got it</button>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+function startGps(highAccuracy) {
+  const b = $('#btnGps');
+  let done = false;
+  let best = null;         // single best reading (by accuracy)
+  let settled = false;     // did we fill lat/lng at least once?
+
+  function accept(lat, lng, acc) {
+    $('#lat').value = lat.toFixed(6);
+    $('#lng').value = lng.toFixed(6);
+    settled = true;
+  }
+
+  function finish(msg, ms) {
+    if (done) return; done = true;
+    if (gpsWatch !== null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; }
+    clearTimeout(refineTimer);
+    b.disabled = false; b.textContent = '🎯 Get LatLong';
+    if (settled) {
+      toast('📍 Location set (±' + Math.round(best.coords.accuracy) + ' m)', 2500);
+    } else if (msg) {
+      toast(msg, ms || 3500);
+    }
+  }
+
+  b.textContent = highAccuracy ? '⏳ Getting GPS...' : '⏳ Getting location...';
+
+  /* Auto-finish 3 s after first accepted reading (gives time to refine) */
+  let refineTimer = null;
+
+  gpsWatch = navigator.geolocation.watchPosition(pos => {
+    const acc = pos.coords.accuracy;
+
+    /* Always keep the most accurate reading */
+    if (!best || acc < best.coords.accuracy) {
+      best = pos;
+      accept(pos.coords.latitude, pos.coords.longitude, acc);
+      b.textContent = '⏳ Refining... ±' + Math.round(acc) + ' m';
+    }
+
+    /* Very accurate → finish immediately */
+    if (acc <= 15) { finish(); return; }
+
+    /* Start a 3-second settle timer after first reading.
+       If a better reading comes in, the lat/lng updates,
+       but we don't wait forever. */
+    if (!refineTimer) {
+      refineTimer = setTimeout(() => finish(), 3000);
+    }
+
+  }, err => {
+    /* If high-accuracy failed, auto-retry with low accuracy (WiFi/cell) */
+    if (highAccuracy && !settled) {
+      if (gpsWatch !== null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; }
+      b.textContent = '⏳ Trying WiFi location...';
+      startGps(false);
+      return;
+    }
+    if (err.code === 1) {
+      finish('Permission denied — tap 🔒 → allow Location → refresh page.', 6000);
+    } else if (err.code === 2) {
+      finish('Location unavailable — turn on Location in phone Settings.', 5000);
+    } else {
+      if (settled) finish();
+      else finish('Could not get location — check Location is ON.', 4000);
+    }
+  }, { enableHighAccuracy: highAccuracy, timeout: 10000, maximumAge: 2000 });
+
+  /* Hard timeout: use whatever we have after 12 s */
+  setTimeout(() => {
+    if (!done) {
+      if (settled) finish();
+      else if (highAccuracy) {
+        /* GPS hardware timed out — fall back to WiFi/cell */
+        if (gpsWatch !== null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; }
+        startGps(false);
+      } else {
+        finish('Could not get location — check Location is ON.', 4000);
+      }
+    }
+  }, 12000);
+}
+
+$('#btnGps').onclick = () => {
+  if (!navigator.geolocation) return toast('GPS not supported in this browser', 4000);
+  if (!window.isSecureContext) { showGpsHelp(); return; }
+  if (gpsWatch !== null) return;
+  const b = $('#btnGps'); b.disabled = true;
+  startGps(true);  // try GPS first, auto-falls back to WiFi/cell
+};
+
+/* ---------- mic ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+$('#btnMic').onclick = () => {
+  if (!SR) return toast('Mic typing not supported in this browser. Use keyboard mic.', 3500);
+  const rec = new SR(); rec.lang = 'en-IN'; rec.interimResults = false;
+  const b = $('#btnMic'); b.classList.add('rec');
+  rec.onresult = e => { $('#name').value = e.results[0][0].transcript; };
+  rec.onerror = () => toast('Mic error');
+  rec.onend = () => b.classList.remove('rec');
+  rec.start();
+};
+
+/* ---------- save point (with offline retry queue so nothing is lost) ---------- */
+const QKEY = 'geotrack_pending';
+const getQ = () => { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch { return []; } };
+const setQ = q => { try { localStorage.setItem(QKEY, JSON.stringify(q)); } catch {} showPending(); };
+function showPending() {
+  const n = getQ().length, el = $('#pending');
+  el.style.display = n ? 'block' : 'none';
+  el.textContent = n ? '⚠ ' + n + ' point(s) waiting to be saved — will retry automatically.' : '';
+}
+async function flushQ() {
+  let q = getQ(); if (!q.length) return;
+  const rest = [];
+  for (const item of q) {
+    try { await api('/api/projects/' + item.pid + '/points', { method: 'POST', body: JSON.stringify(item.data) }); }
+    catch (e) { if (!e.status) rest.push(item); }   // keep only network failures
+  }
+  setQ(rest);
+  if (project) await loadProject(false);
+}
+window.addEventListener('online', flushQ); setInterval(flushQ, 15000);
+
+/* ---------- reconnect / navigation state ---------- */
+let reconnectPoint = null;
+let navPointIdx = -1;
+let highlightMarker = null;
+
+function setReconnectMode(pt) {
+  reconnectPoint = pt;
+  /* DO NOT put old lat/lng into the form - keep fields ready for the NEW point! */
+  $('#lat').value = '';
+  $('#lng').value = '';
+  $('#name').value = '';
+  $('#status').value = 1;
+  $('#rcSeq').textContent = pt.seq;
+  if ($('#rcSeq2')) $('#rcSeq2').textContent = pt.seq;
+  $('#rcName').textContent = pt.name || '(Point #' + pt.seq + ')';
+  $('#reconnectBanner').style.display = 'flex';
+
+  /* Remove any existing highlight circle */
+  if (highlightMarker) {
+    map.removeLayer(highlightMarker);
+    highlightMarker = null;
+  }
+
+  /* Add glowing highlight marker on that point */
+  highlightMarker = L.circleMarker([pt.latitude, pt.longitude], {
+    radius: 14,
+    color: '#ff9800',
+    weight: 4,
+    fillColor: '#ffeb3b',
+    fillOpacity: 0.6
+  }).addTo(map);
+
+  highlightMarker.bindTooltip('📍 #' + pt.seq + ' ' + esc(pt.name || '') + ' (Connecting here)', {
+    permanent: true,
+    direction: 'top',
+    offset: [0, -10]
+  }).openTooltip();
+
+  /* Zoom in to the MAXIMUM level possible (level 20) with smooth animation */
+  map.flyTo([pt.latitude, pt.longitude], 20, {
+    animate: true,
+    duration: 0.8
+  });
+}
+
+function clearReconnectMode() {
+  reconnectPoint = null;
+  navPointIdx = -1;
+  $('#reconnectBanner').style.display = 'none';
+  if (highlightMarker) {
+    map.removeLayer(highlightMarker);
+    highlightMarker = null;
+  }
+  $('#lat').value = '';
+  $('#lng').value = '';
+  $('#name').value = '';
+}
+
+$('#btnCancelReconnect').onclick = () => {
+  clearReconnectMode();
+  toast('Reconnection cancelled');
+};
+
+/* ---------- PREVIOUS BUTTON ---------- */
+$('#btnPrev').onclick = () => {
+  if (!project) return openPicker();
+  if (!points.length) return toast('No saved points yet');
+
+  if (navPointIdx === -1) {
+    navPointIdx = points.length - 1;
+  } else {
+    navPointIdx = Math.max(0, navPointIdx - 1);
+  }
+  const pt = points[navPointIdx];
+  setReconnectMode(pt);
+  toast('🔗 Connecting from Point #' + pt.seq + '. Capture new GPS & tap Next.');
+};
+
+/* ---------- SEARCH BUTTON & MODAL ---------- */
+function renderSearchList(query = '') {
+  const q = query.trim().toLowerCase();
+  const list = points.filter(p => {
+    if (!q) return true;
+    return String(p.seq).includes(q) || (p.name && p.name.toLowerCase().includes(q));
+  });
+
+  const el = $('#searchList');
+  if (!list.length) {
+    el.innerHTML = '<p style="text-align:center;color:var(--mut);padding:14px 0">No matching points found</p>';
+    return;
+  }
+  const L_ = {1:'Landmark+Line', 2:'Line only', 3:'End'};
+  el.innerHTML = list.map(p => `
+    <div class="search-item" data-id="${p.id}">
+      <div style="flex:1;min-width:0;cursor:pointer" class="search-select-area">
+        <b style="color:var(--pri)">#${p.seq} ${esc(p.name || '(no name)')}</b>
+        ${p.remark ? `<span class="badge-remark">${esc(p.remark)}</span>` : ''}
+        <div style="font-size:11px;color:var(--mut);margin-top:2px">${esc(p.lat_text)}, ${esc(p.lng_text)} · ${L_[p.status]}</div>
+      </div>
+      <button class="btn sec btn-loop-action" style="width:auto;padding:6px 10px;font-size:12px;flex:none;margin-right:6px">➰ Loop${p.loop_count ? ' (' + p.loop_count + ')' : ''}</button>
+      <button class="btn ok btn-select-action" style="width:auto;padding:6px 12px;font-size:12px;flex:none;margin-right:6px">Select</button>
+      <button class="del btn-del-search" data-del="${p.id}" aria-label="Delete" style="flex:none;padding:4px 6px">🗑</button>
+    </div>
+  `).join('');
+
+  $$('.search-item').forEach(item => {
+    const pid = item.dataset.id;
+    const pt = points.find(p => p.id == pid);
+    /* loop modal */
+    const loopBtn = item.querySelector('.btn-loop-action');
+    if (loopBtn) {
+      loopBtn.onclick = (e) => {
+        e.stopPropagation();
+        $('#searchOverlay').classList.remove('on');
+        openFillLoopModal(pt);
+      };
+    }
+    /* delete */
+    const delBtn = item.querySelector('.btn-del-search');
+    if (delBtn) {
+      delBtn.onclick = async (e) => {
+        e.stopPropagation();
+        if (!confirm('Delete Point #' + pt.seq + ' (' + (pt.name || 'no name') + ')?')) return;
+        await api('/api/points/' + pt.id, { method: 'DELETE' });
+        await loadProject(false);
+        renderSearchList($('#searchQuery').value);
+      };
+    }
+    /* select */
+    const selectArea = item.querySelector('.search-select-area');
+    const selectBtn = item.querySelector('.btn-select-action');
+    const doSelect = () => {
+      if (pt) {
+        if (currentUser && currentUser.role === 'viewer') {
+          $('#searchOverlay').classList.remove('on');
+          map.setView([pt.latitude, pt.longitude], Math.max(map.getZoom(), 17));
+          openFillLoopModal(pt);
+          return;
+        }
+        setReconnectMode(pt);
+        $('#searchOverlay').classList.remove('on');
+        toast('🔗 Connecting from Point #' + pt.seq + '. Capture new GPS & tap Next.');
+      }
+    };
+    if (selectArea) selectArea.onclick = doSelect;
+    if (selectBtn) selectBtn.onclick = doSelect;
+  });
+}
+
+$('#btnSearch').onclick = () => {
+  if (!project) return openPicker();
+  if (!points.length) return toast('No points to search yet');
+  $('#searchQuery').value = '';
+  renderSearchList('');
+  $('#searchOverlay').classList.add('on');
+  setTimeout(() => $('#searchQuery').focus(), 100);
+};
+
+$('#searchQuery').oninput = e => {
+  renderSearchList(e.target.value);
+};
+
+$('#btnSearchClose').onclick = () => $('#searchOverlay').classList.remove('on');
+
+/* ---------- NEXT BUTTON (Saves point) ---------- */
+$('#btnNext').onclick = async () => {
+  if (!project) return openPicker();
+  const lat = $('#lat').value.trim().replace(',', '.');
+  const lng = $('#lng').value.trim().replace(',', '.');
+  if (isNaN(parseFloat(lat)) || isNaN(parseFloat(lng))) return toast('Capture or enter latitude & longitude');
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return toast('Latitude / longitude out of range');
+
+  const newPointEntry = {
+    latitude: lat,
+    longitude: lng,
+    status: +$('#status').value,
+    name: $('#name').value.trim(),
+    remark: ""
+  };
+
+  /* If reconnecting from Previous or Search:
+     1. Automatically insert that landmark point again with static remark "Already added"
+     2. Insert the new point right after it */
+  let payload;
+  let reconnectedSeq = null;
+  if (reconnectPoint) {
+    reconnectedSeq = reconnectPoint.seq;
+    const parentEntry = {
+      latitude: reconnectPoint.latitude,
+      longitude: reconnectPoint.longitude,
+      status: reconnectPoint.status,
+      name: reconnectPoint.name || '',
+      remark: "Already added"
+    };
+    payload = [parentEntry, newPointEntry];
+  } else {
+    payload = newPointEntry;
+  }
+
+  try {
+    await api('/api/projects/' + project.id + '/points', { method: 'POST', body: JSON.stringify(payload) });
+    if (reconnectedSeq) {
+      toast('🔗 Point #' + reconnectedSeq + ' ("Already added") & new point saved! Line connected.');
+      clearReconnectMode();
+    } else {
+      toast('Saved ✔ Next point ready');
+      $('#lat').value = '';
+      $('#lng').value = '';
+      $('#name').value = '';
+    }
+    if (newPointEntry.status === 3) $('#status').value = '1';
+  } catch (e) {
+    if (e.status) return toast(e.message, 3000);
+    const queueItems = Array.isArray(payload) ? payload : [payload];
+    const q = getQ();
+    queueItems.forEach(item => q.push({ pid: project.id, data: item }));
+    setQ(q);
+    toast('Offline — saved on phone, will sync');
+    clearReconnectMode();
+  }
+
+  await loadProject(true).catch(() => {});
+};
+
+/* ---------- finish project function ---------- */
+async function finishProject() {
+  if (!project) return toast('Open a project first');
+  if (!confirm('Finish project "' + project.name + '"?')) return;
+  await flushQ();
+  if (getQ().length) return toast('Some points are not saved yet — check connection', 3500);
+  toast('Project finished ✔');
+  localStorage.removeItem(getActivePidKey());
+  project = null; points = []; segments = []; render(); drawMap(false);
+  setTimeout(openPicker, 500);
+}
+
+/* ---------- FILL LOOP MODAL & EXCEL EXPORT ---------- */
+let currentLoopPoint = null;
+
+async function openFillLoopModal(pt) {
+  if (!project) return toast('Please select a project first');
+  currentLoopPoint = pt;
+  const isViewer = currentUser && currentUser.role === 'viewer';
+
+  if ($('#loopModalTitle')) {
+    $('#loopModalTitle').textContent = isViewer ? '➰ Point & Loop Details' : '➰ Fill Loop Details';
+  }
+  $('#loopPtSeq').textContent = pt.seq;
+  $('#loopPtName').textContent = pt.name || '(No name)';
+  $('#loopPtCoords').textContent = (pt.lat_text || pt.latitude) + ', ' + (pt.lng_text || pt.longitude);
+
+  let existingLoops = [];
+  try {
+    const res = await api('/api/projects/' + project.id + '/points/' + pt.id + '/loops');
+    existingLoops = res.loops || [];
+  } catch (err) {
+    existingLoops = [];
+  }
+
+  const countInputWrap = $('#loopCountInputContainer');
+  if (isViewer) {
+    if (countInputWrap) countInputWrap.style.display = 'none';
+    $('#btnLoopDone').style.display = 'none';
+    $('#btnLoopCancel').textContent = '✕ Close';
+    $('#btnLoopCancel').style.flex = '1';
+    renderViewerLoopBoxes(existingLoops, pt);
+  } else {
+    if (countInputWrap) countInputWrap.style.display = 'block';
+    $('#btnLoopDone').style.display = 'block';
+    $('#btnLoopCancel').textContent = 'Cancel';
+    $('#btnLoopCancel').style.flex = '1';
+    const initialCount = existingLoops.length > 0 ? existingLoops.length : 1;
+    $('#inputLoopCount').value = initialCount;
+    renderLoopBoxes(initialCount, existingLoops);
+  }
+
+  $('#loopOverlay').classList.add('on');
+}
+
+function renderViewerLoopBoxes(existingLoops, pt) {
+  const container = $('#loopBoxesContainer');
+  container.innerHTML = '';
+
+  const L_ = {1: 'Landmark + Line', 2: 'Line only', 3: 'End'};
+  const banner = document.createElement('div');
+  banner.style.cssText = 'background:#f0f4f9;border-radius:10px;padding:10px 12px;margin-bottom:12px;border:1px solid #d0dbe7';
+  banner.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-size:11px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">POINT DETAILS</span>
+      <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#e3f2fd;color:#1565c0;font-weight:700">${esc(L_[pt.status] || 'Point')}</span>
+    </div>
+    <div style="font-size:14px;color:var(--txt);margin-bottom:4px">
+      <b>Name:</b> ${esc(pt.name || '(No name)')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;color:var(--pri)">
+      <div><b>Latitude:</b> ${esc(pt.lat_text || pt.latitude)}</div>
+      <div><b>Longitude:</b> ${esc(pt.lng_text || pt.longitude)}</div>
+    </div>
+    ${pt.remark ? `<div style="font-size:11.5px;color:#c62828;margin-top:4px"><b>Remark:</b> ${esc(pt.remark)}</div>` : ''}
+  `;
+  container.appendChild(banner);
+
+  if (!existingLoops || existingLoops.length === 0) {
+    const emptyBox = document.createElement('div');
+    emptyBox.style.cssText = 'text-align:center;padding:26px 14px;background:#fff;border-radius:12px;border:1.5px dashed #cfd8e3;margin:6px 0';
+    emptyBox.innerHTML = `
+      <div style="font-size:36px;margin-bottom:6px">➰</div>
+      <b style="font-size:14px;color:var(--txt);display:block;margin-bottom:4px">No Loop Details Recorded</b>
+      <span style="font-size:12px;color:var(--mut)">No cable drum or loop numbers have been saved for this point.</span>
+    `;
+    container.appendChild(emptyBox);
+    return;
+  }
+
+  const countHdr = document.createElement('div');
+  countHdr.style.cssText = 'font-size:12px;font-weight:700;color:var(--pri);margin-bottom:8px';
+  countHdr.textContent = `Recorded Loops (${existingLoops.length}):`;
+  container.appendChild(countHdr);
+
+  existingLoops.forEach((lp, idx) => {
+    const k = lp.loop_no || (idx + 1);
+    const box = document.createElement('div');
+    box.className = 'card';
+    box.style.border = '1.5px solid #cfd8e3';
+    box.style.marginBottom = '12px';
+    box.style.padding = '12px';
+    box.style.borderRadius = '12px';
+    box.style.background = '#fff';
+
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:800;font-size:14px;color:var(--pri)">🔁 Loop #${k}</span>
+      </div>
+
+      <!-- RED CABLE DETAILS (READ ONLY) -->
+      <div style="background:#fff5f5;border-radius:8px;padding:10px;margin-bottom:8px;border:1px solid #ffcdd2">
+        <div style="font-weight:700;font-size:12.5px;color:#c62828;margin-bottom:6px">🔴 Red Cable</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:12px">
+          <div><span style="color:var(--mut);font-size:10.5px;display:block">Red-Drum number</span><b style="color:#b71c1c">${esc(lp.red_drum_number || '-')}</b></div>
+          <div><span style="color:var(--mut);font-size:10.5px;display:block">Red-Cable ID</span><b style="color:#b71c1c">${esc(lp.red_cable_id || '-')}</b></div>
+          <div><span style="color:var(--mut);font-size:10.5px;display:block">Red-Start (Left)</span><b style="color:#b71c1c">${esc(lp.red_start || '-')}</b></div>
+          <div><span style="color:var(--mut);font-size:10.5px;display:block">Red-End (Right)</span><b style="color:#b71c1c">${esc(lp.red_end || '-')}</b></div>
+        </div>
+      </div>
+
+      <!-- WHITE CABLE DETAILS (READ ONLY) -->
+      <div style="background:#f8f9fa;border-radius:8px;padding:10px;border:1px solid #cfd8dc">
+        <div style="font-weight:700;font-size:12.5px;color:#37474f;margin-bottom:6px">⚪ White Cable</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:12px">
+          <div><span style="color:var(--mut);font-size:10.5px;display:block">White-Drum number</span><b style="color:#37474f">${esc(lp.white_drum_number || '-')}</b></div>
+          <div><span style="color:var(--mut);font-size:10.5px;display:block">White-Cable ID</span><b style="color:#37474f">${esc(lp.white_cable_id || '-')}</b></div>
+          <div><span style="color:var(--mut);font-size:10.5px;display:block">White-Start (Left)</span><b style="color:#37474f">${esc(lp.white_start || '-')}</b></div>
+          <div><span style="color:var(--mut);font-size:10.5px;display:block">White-End (Right)</span><b style="color:#37474f">${esc(lp.white_end || '-')}</b></div>
+        </div>
+      </div>
+    `;
+    container.appendChild(box);
+  });
+}
+
+function renderLoopBoxes(count, existingData = null) {
+  const container = $('#loopBoxesContainer');
+  const currentValues = existingData || getCurrentlyEnteredLoops();
+
+  container.innerHTML = '';
+  count = Math.max(1, Math.min(50, parseInt(count, 10) || 1));
+
+  for (let k = 1; k <= count; k++) {
+    const prev = currentValues[k - 1] || {};
+    const box = document.createElement('div');
+    box.className = 'card loop-box';
+    box.dataset.loopIdx = k;
+    box.style.border = '1.5px solid #cfd8e3';
+    box.style.marginBottom = '12px';
+    box.style.padding = '10px';
+
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:800;font-size:14px;color:var(--pri)">🔁 Loop #${k}</span>
+      </div>
+
+      <!-- RED CABLE SECTION -->
+      <div style="background:#ffebee;border-radius:8px;padding:8px;margin-bottom:8px;border:1px solid #ffcdd2">
+        <div style="font-weight:700;font-size:12px;color:#c62828;margin-bottom:6px">🔴 Red Cable</div>
+        <div class="row" style="margin-bottom:6px">
+          <div>
+            <label style="margin:0 0 2px;font-size:10px;color:#b71c1c;font-weight:700">Red-Drum number</label>
+            <input class="lp-red-drum" placeholder="Drum #" value="${esc(prev.red_drum_number || '')}" autocomplete="off" style="padding:6px 8px;font-size:13px">
+          </div>
+          <div>
+            <label style="margin:0 0 2px;font-size:10px;color:#b71c1c;font-weight:700">Red-Cable ID</label>
+            <input class="lp-red-cable" placeholder="Cable ID" value="${esc(prev.red_cable_id || '')}" autocomplete="off" style="padding:6px 8px;font-size:13px">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label style="margin:0 0 2px;font-size:10px;color:#b71c1c;font-weight:700">Red-Start (Left)</label>
+            <input class="lp-red-start" placeholder="Start / Left" value="${esc(prev.red_start || '')}" autocomplete="off" style="padding:6px 8px;font-size:13px">
+          </div>
+          <div>
+            <label style="margin:0 0 2px;font-size:10px;color:#b71c1c;font-weight:700">Red-End (Right)</label>
+            <input class="lp-red-end" placeholder="End / Right" value="${esc(prev.red_end || '')}" autocomplete="off" style="padding:6px 8px;font-size:13px">
+          </div>
+        </div>
+      </div>
+
+      <!-- WHITE CABLE SECTION -->
+      <div style="background:#f5f7fa;border-radius:8px;padding:8px;border:1px solid #cfd8dc">
+        <div style="font-weight:700;font-size:12px;color:#37474f;margin-bottom:6px">⚪ White Cable</div>
+        <div class="row" style="margin-bottom:6px">
+          <div>
+            <label style="margin:0 0 2px;font-size:10px;color:#455a64;font-weight:700">White-Drum number</label>
+            <input class="lp-white-drum" placeholder="Drum #" value="${esc(prev.white_drum_number || '')}" autocomplete="off" style="padding:6px 8px;font-size:13px">
+          </div>
+          <div>
+            <label style="margin:0 0 2px;font-size:10px;color:#455a64;font-weight:700">White-Cable ID</label>
+            <input class="lp-white-cable" placeholder="Cable ID" value="${esc(prev.white_cable_id || '')}" autocomplete="off" style="padding:6px 8px;font-size:13px">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label style="margin:0 0 2px;font-size:10px;color:#455a64;font-weight:700">White-Start (Left)</label>
+            <input class="lp-white-start" placeholder="Start / Left" value="${esc(prev.white_start || '')}" autocomplete="off" style="padding:6px 8px;font-size:13px">
+          </div>
+          <div>
+            <label style="margin:0 0 2px;font-size:10px;color:#455a64;font-weight:700">White-End (Right)</label>
+            <input class="lp-white-end" placeholder="End / Right" value="${esc(prev.white_end || '')}" autocomplete="off" style="padding:6px 8px;font-size:13px">
+          </div>
+        </div>
+      </div>
+    `;
+    container.appendChild(box);
+  }
+}
+
+function getCurrentlyEnteredLoops() {
+  const boxes = $$('#loopBoxesContainer .loop-box');
+  return boxes.map(b => ({
+    red_drum_number: b.querySelector('.lp-red-drum').value,
+    red_cable_id: b.querySelector('.lp-red-cable').value,
+    red_start: b.querySelector('.lp-red-start').value,
+    red_end: b.querySelector('.lp-red-end').value,
+    white_drum_number: b.querySelector('.lp-white-drum').value,
+    white_cable_id: b.querySelector('.lp-white-cable').value,
+    white_start: b.querySelector('.lp-white-start').value,
+    white_end: b.querySelector('.lp-white-end').value,
+  }));
+}
+
+$('#inputLoopCount').oninput = () => {
+  const cnt = parseInt($('#inputLoopCount').value, 10);
+  if (!cnt || cnt < 1) return;
+  renderLoopBoxes(cnt);
+};
+
+$('#btnLoopClose').onclick = () => $('#loopOverlay').classList.remove('on');
+$('#btnLoopCancel').onclick = () => $('#loopOverlay').classList.remove('on');
+
+$('#btnLoopDone').onclick = async () => {
+  if (!currentLoopPoint || !project) return;
+  const loops = getCurrentlyEnteredLoops();
+
+  try {
+    $('#btnLoopDone').disabled = true;
+    $('#btnLoopDone').textContent = 'Saving...';
+
+    // Save directly to SQL
+    await api('/api/projects/' + project.id + '/points/' + currentLoopPoint.id + '/loops', {
+      method: 'POST',
+      body: JSON.stringify({ loops })
+    });
+
+    toast('✅ Saved ' + loops.length + ' loop(s) to SQL!');
+
+    // Refresh project data to update loop counts & map markers
+    await loadProject(false);
+    $('#loopOverlay').classList.remove('on');
+  } catch (err) {
+    toast('Error: ' + err.message);
+  } finally {
+    $('#btnLoopDone').disabled = false;
+    $('#btnLoopDone').textContent = '💾 Done';
+  }
+};
+
+/* ---------- three-dots menu ---------- */
+$('#dots').onclick = e => { e.stopPropagation(); $('#menu').classList.toggle('on'); };
+document.addEventListener('click', () => {
+  $('#menu').classList.remove('on');
+  $('#projPopover').classList.remove('on');
+  $('#profilePopover').classList.remove('on');
+});
+$$('#menu button').forEach(b => b.onclick = () => {
+  const act = b.dataset.act;
+  $('#menu').classList.remove('on');
+  if (act === 'switch') return openPicker();
+  if (!project) return toast('Open a project first');
+  if (act === 'export') {
+    $('#exportOverlay').classList.add('on');
+    return;
+  }
+  if (act === 'openapp') {
+    $('#openAppOverlay').classList.add('on');
+    return;
+  }
+  if (act === 'manage-users') {
+    openUserManagement();
+    return;
+  }
+});
+
+/* ---------- EXPORT POPUP MODAL ---------- */
+let selectedExportType = 'points';
+$$('#exportTypeGroup .export-opt').forEach(opt => {
+  opt.onclick = () => {
+    $$('#exportTypeGroup .export-opt').forEach(o => o.classList.remove('on'));
+    opt.classList.add('on');
+    selectedExportType = opt.dataset.val;
+  };
+});
+
+$('#btnExportClose').onclick = () => $('#exportOverlay').classList.remove('on');
+$('#btnExportCancel').onclick = () => $('#exportOverlay').classList.remove('on');
+
+$('#btnDoExport').onclick = () => {
+  if (!project) return toast('Open a project first');
+  const format = $('#exportFormatSelect').value;
+  const base = '/api/projects/' + project.id + '/export/';
+  let url = '';
+
+  if (format === 'excel') {
+    if (selectedExportType === 'points') url = base + 'excel';
+    else if (selectedExportType === 'loop') url = base + 'loops-excel';
+    else if (selectedExportType === 'both') url = base + 'both-excel';
+  } else { // pdf
+    if (selectedExportType === 'points') url = base + 'pdf';
+    else if (selectedExportType === 'loop') url = base + 'loops-pdf';
+    else if (selectedExportType === 'both') url = base + 'both-pdf';
+  }
+
+  location.href = url;
+  toast('⬇️ Downloading ' + selectedExportType.toUpperCase() + ' (' + format.toUpperCase() + ')...');
+  $('#exportOverlay').classList.remove('on');
+};
+
+/* ---------- OPEN IN APP POPUP MODAL ---------- */
+$('#btnOpenAppClose').onclick = () => $('#openAppOverlay').classList.remove('on');
+$('#btnOpenAppCancel').onclick = () => $('#openAppOverlay').classList.remove('on');
+
+$('#btnOpenGmaps').onclick = () => {
+  if (!project) return toast('Open a project first');
+  if (!points.length) return toast('No points recorded yet');
+  const p = points[points.length - 1];
+  window.open('https://www.google.com/maps/search/?api=1&query=' + p.latitude + ',' + p.longitude, '_blank');
+  $('#openAppOverlay').classList.remove('on');
+};
+
+$('#btnOpenGearth').onclick = () => {
+  if (!project) return toast('Open a project first');
+  location.href = '/api/projects/' + project.id + '/export/kml';
+  toast('KML downloaded — open it with Google Earth', 3500);
+  $('#openAppOverlay').classList.remove('on');
+};
+
+const btnFin = $('#btnFinish'); if (btnFin) btnFin.onclick = finishProject;
+
+/* ---------- AUTH & SESSION ---------- */
+let currentUser = null; // { id, email, role }
+
+function getActivePidKey() {
+  return currentUser ? ('geotrack_active_pid_' + currentUser.id) : 'geotrack_active_pid';
+}
+
+async function checkAuth() {
+  try {
+    const res = await api('/api/auth/me');
+    if (res.authenticated && res.user) {
+      setLoggedInUser(res.user);
+      return true;
+    }
+  } catch (_) {}
+
+  showLoginModal();
+  return false;
+}
+
+function showLoginModal() {
+  currentUser = null;
+  project = null;
+  points = [];
+  segments = [];
+  localStorage.removeItem('geotrack_user');
+  render();
+  drawMap(false);
+  $('#projOverlay').classList.remove('on');
+  $('#newOverlay').classList.remove('on');
+  $('#exportOverlay').classList.remove('on');
+  $('#openAppOverlay').classList.remove('on');
+  $('#loopOverlay').classList.remove('on');
+  $('#userManagementOverlay').classList.remove('on');
+  $('#loginOverlay').classList.add('on');
+  setTimeout(() => $('#loginEmail')?.focus(), 200);
+}
+
+function applyRolePermissions() {
+  const isViewer = currentUser && currentUser.role === 'viewer';
+  document.body.classList.toggle('viewer-mode', isViewer);
+
+  const addTab = $('button[data-tab="add"]');
+  const loopTab = $('button[data-tab="loop"]');
+  const btnNew = $('#btnNew');
+
+  if (isViewer) {
+    if (addTab) addTab.style.display = 'none';
+    if (loopTab) {
+      loopTab.innerHTML = '🗺️ Map & Loops (<span id="tabCount">' + points.length + '</span>)';
+    }
+    $('#finishbar').style.display = 'none';
+    if (btnNew) btnNew.textContent = '➕ Add / New project';
+    showTab('loop');
+  } else {
+    if (addTab) addTab.style.display = '';
+    if (loopTab) {
+      loopTab.innerHTML = '🔁 Loop (<span id="tabCount">' + points.length + '</span>)';
+    }
+    $('#finishbar').style.display = '';
+    if (btnNew) btnNew.textContent = '➕ Add / New project';
+  }
+}
+
+function setLoggedInUser(user) {
+  currentUser = user;
+  localStorage.setItem('geotrack_user', JSON.stringify(user));
+  $('#loginOverlay').classList.remove('on');
+
+  // Update profile popover details
+  $('#popUserEmail').textContent = user.email;
+  const isSuper = user.role === 'superadmin';
+  const isViewer = user.role === 'viewer';
+
+  let roleLabel = 'USER';
+  let roleBg = '#e3f2fd';
+  let roleColor = '#1565c0';
+  let roleIcon = '👤';
+
+  if (isSuper) {
+    roleLabel = 'SUPERADMIN';
+    roleBg = '#fce4ec';
+    roleColor = '#c2185b';
+    roleIcon = '👑';
+  } else if (isViewer) {
+    roleLabel = 'VIEWER';
+    roleBg = '#ede7f6';
+    roleColor = '#5e35b1';
+    roleIcon = '👁️';
+  }
+
+  $('#popUserRole').textContent = roleLabel;
+  $('#popUserRole').style.background = roleBg;
+  $('#popUserRole').style.color = roleColor;
+  $('#popUserIcon').textContent = roleIcon;
+  $('#btnProfileMenu').textContent = roleIcon;
+
+  // Show or hide admin features
+  if (isSuper) {
+    $('#popAdminBlock').style.display = 'block';
+    $('#menuItemManageUsers').style.display = 'flex';
+  } else {
+    $('#popAdminBlock').style.display = 'none';
+    $('#menuItemManageUsers').style.display = 'none';
+  }
+
+  applyRolePermissions();
+}
+
+// Login form submit
+$('#formLogin').onsubmit = async (e) => {
+  e.preventDefault();
+  const email = $('#loginEmail').value.trim();
+  const password = $('#loginPassword').value.trim();
+  const errBox = $('#loginError');
+  errBox.style.display = 'none';
+
+  if (!email || !password) {
+    errBox.textContent = 'Please enter both email and password';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  const btn = $('#btnLoginSubmit');
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+
+    const res = await api('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+
+    if (res.ok && res.user) {
+      setLoggedInUser(res.user);
+      toast('👋 Welcome ' + (res.user.role === 'superadmin' ? 'Superadmin' : res.user.email) + '!');
+      $('#loginPassword').value = '';
+
+      const lastPid = localStorage.getItem(getActivePidKey());
+      if (lastPid) {
+        try {
+          project = { id: +lastPid };
+          await loadProject(true);
+          showTab(res.user.role === 'viewer' ? 'loop' : 'add');
+        } catch (_) {
+          localStorage.removeItem(getActivePidKey());
+          project = null; points = []; segments = []; render(); drawMap(false);
+        }
+      } else {
+        project = null; points = []; segments = []; render(); drawMap(false);
+      }
+    }
+  } catch (err) {
+    errBox.textContent = err.message || 'Login failed. Please check credentials.';
+    errBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔐 Sign In';
+  }
+};
+
+// Password eye toggle
+$('#btnToggleLoginPwd').onclick = () => {
+  const inp = $('#loginPassword');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+};
+
+// Profile icon click
+$('#btnProfileMenu').onclick = e => {
+  e.stopPropagation();
+  $('#menu').classList.remove('on');
+  $('#projPopover').classList.remove('on');
+  $('#profilePopover').classList.toggle('on');
+};
+$('#profilePopover').onclick = e => e.stopPropagation();
+
+// Logout button
+$('#btnPopLogout').onclick = async () => {
+  if (!confirm('Log out from GeoTrack?')) return;
+  $('#profilePopover').classList.remove('on');
+  try {
+    await api('/api/auth/logout', { method: 'POST' });
+  } catch (_) {}
+  showLoginModal();
+  toast('Logged out successfully');
+};
+
+// Superadmin: Manage Users Modal
+async function openUserManagement() {
+  $('#menu').classList.remove('on');
+  $('#profilePopover').classList.remove('on');
+  $('#userManagementOverlay').classList.add('on');
+  await loadAdminUsers();
+}
+
+async function loadAdminUsers() {
+  const listEl = $('#usersListContainer');
+  listEl.innerHTML = '<p style="text-align:center;color:var(--mut);padding:10px 0">Loading accounts...</p>';
+  try {
+    const res = await api('/api/admin/users');
+    const users = res.users || [];
+    if (!users.length) {
+      listEl.innerHTML = '<p style="text-align:center;color:var(--mut)">No users found</p>';
+      return;
+    }
+    listEl.innerHTML = users.map(u => {
+      const isSuper = u.role === 'superadmin';
+      const isViewer = u.role === 'viewer';
+      const isPrimary = u.email.toLowerCase() === 'preet31012005@gmail.com';
+      const roleBg = isSuper ? '#fce4ec' : (isViewer ? '#ede7f6' : '#e3f2fd');
+      const roleCol = isSuper ? '#c2185b' : (isViewer ? '#5e35b1' : '#1565c0');
+      const roleIcon = isSuper ? '👑 ' : (isViewer ? '👁️ ' : '👤 ');
+      return `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #e0e8f2;border-radius:10px;margin-bottom:6px;background:#fff">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px">
+              <b style="font-size:13.5px;color:var(--txt)">${esc(u.email)}</b>
+              <span style="font-size:10px;padding:2px 7px;border-radius:5px;font-weight:700;background:${roleBg};color:${roleCol}">${roleIcon}${esc(u.role.toUpperCase())}</span>
+            </div>
+            <small style="color:var(--mut);font-size:11px">Created: ${esc(u.created_at)}</small>
+          </div>
+          ${!isPrimary ? `<button class="del btn-del-user" data-uid="${u.id}" data-email="${esc(u.email)}" style="font-size:16px;padding:4px 8px" title="Delete account">🗑</button>` : '<span style="font-size:11px;color:var(--mut);font-weight:600">Owner</span>'}
+        </div>
+      `;
+    }).join('');
+
+    $$('.btn-del-user').forEach(btn => {
+      btn.onclick = async () => {
+        const uid = btn.dataset.uid;
+        const email = btn.dataset.email;
+        if (!confirm('Delete user "' + email + '"?')) return;
+        try {
+          await api('/api/admin/users/' + uid, { method: 'DELETE' });
+          toast('User deleted');
+          await loadAdminUsers();
+        } catch (err) {
+          toast('Error: ' + err.message);
+        }
+      };
+    });
+  } catch (err) {
+    listEl.innerHTML = '<p style="color:var(--red);text-align:center">Error loading users: ' + esc(err.message) + '</p>';
+  }
+}
+
+// Create User submit
+$('#btnCreateNewUser').onclick = async () => {
+  const email = $('#newAccEmail').value.trim();
+  const password = $('#newAccPassword').value.trim();
+  const role = $('#newAccRole').value;
+
+  if (!email || !password) {
+    return toast('Email and password are required');
+  }
+  if (password.length < 4) {
+    return toast('Password must be at least 4 characters');
+  }
+
+  try {
+    $('#btnCreateNewUser').disabled = true;
+    await api('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, role })
+    });
+    toast('✅ User "' + email + '" created!');
+    $('#newAccEmail').value = '';
+    $('#newAccPassword').value = '';
+    await loadAdminUsers();
+  } catch (err) {
+    toast('Error: ' + err.message);
+  } finally {
+    $('#btnCreateNewUser').disabled = false;
+  }
+};
+
+$('#btnCloseUserMgmt').onclick = () => $('#userManagementOverlay').classList.remove('on');
+$('#btnUserMgmtCancel').onclick = () => $('#userManagementOverlay').classList.remove('on');
+$('#btnPopManageUsers').onclick = openUserManagement;
+
+/* ---------- start ---------- */
+showPending();
+(async function init() {
+  const isAuthed = await checkAuth();
+  if (isAuthed && currentUser) {
+    const lastPid = localStorage.getItem(getActivePidKey());
+    if (lastPid) {
+      try {
+        project = { id: +lastPid };
+        await loadProject(true);
+        showTab(currentUser.role === 'viewer' ? 'loop' : 'add');
+        return;
+      } catch (e) {
+        localStorage.removeItem(getActivePidKey());
+        project = null; points = []; segments = []; render(); drawMap(false);
+      }
+    }
+    render();
+  }
+})();
+</script>
+</body>
+</html>
