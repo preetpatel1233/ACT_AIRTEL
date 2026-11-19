@@ -2,3 +2,4 @@ flask
 openpyxl
 reportlab
 python-dotenv
+gunicorn
