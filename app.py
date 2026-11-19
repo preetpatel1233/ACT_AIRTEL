@@ -1,4 +1,4 @@
-"""GeoTrack - mobile-first lat/long project tracker (Flask + SQLite)."""
+"""GeoTrack - mobile-first lat/long project tracker (Flask + PostgreSQL / Supabase / SQLite)."""
 import io
 import os
 import random
@@ -12,6 +12,13 @@ try:
 except Exception:
     pass
 
+try:
+    import psycopg2
+    import psycopg2.extras
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+
 from flask import Flask, g, jsonify, request, send_file, render_template_string, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -21,6 +28,16 @@ DB_PATH = os.environ.get("DATABASE_PATH", os.path.join(BASE, "geotrack.db"))
 SUPERADMIN_EMAIL = os.environ.get("SUPERADMIN_EMAIL", "preet31012005@gmail.com")
 SUPERADMIN_PASSWORD = os.environ.get("SUPERADMIN_PASSWORD", "Preet@123")
 
+# Supabase / PostgreSQL Configuration
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    sb_host = os.environ.get("SUPABASE_DB_HOST")
+    sb_user = os.environ.get("SUPABASE_DB_USER")
+    sb_pass = os.environ.get("SUPABASE_DB_PASSWORD")
+    sb_port = os.environ.get("SUPABASE_DB_PORT", "6543")
+    if sb_host and sb_user and sb_pass:
+        DATABASE_URL = f"postgresql://{sb_user}:{sb_pass}@{sb_host}:{sb_port}/postgres"
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "geotrack_superadmin_auth_secret_2026")
 
@@ -28,12 +45,103 @@ app.secret_key = os.environ.get("SECRET_KEY", "geotrack_superadmin_auth_secret_2
 STATUS_LABEL = {1: "Landmark + Line", 2: "Line only", 3: "End"}
 
 
-# ---------------------------------------------------------------- database
+# ---------------------------------------------------------------- database compat layer
+class CompatCursor:
+    def __init__(self, cur, is_postgres=False):
+        self.cur = cur
+        self.is_postgres = is_postgres
+        self.lastrowid = None
+
+    def execute(self, sql, params=None):
+        if self.is_postgres:
+            sql = sql.replace("?", "%s")
+            sql = sql.replace("COLLATE NOCASE", "")
+            sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+            if "ON CONFLICT DO NOTHING" not in sql.upper() and ("project_members" in sql or "users" in sql) and "INSERT INTO" in sql.upper():
+                sql = sql.rstrip("; ") + " ON CONFLICT DO NOTHING"
+
+            if sql.strip().upper().startswith("INSERT") and "RETURNING" not in sql.upper() and "projects(" in sql:
+                sql = sql.rstrip("; ") + " RETURNING id"
+                if params:
+                    self.cur.execute(sql, params)
+                else:
+                    self.cur.execute(sql)
+                row = self.cur.fetchone()
+                if row:
+                    self.lastrowid = row[0] if isinstance(row, (tuple, list)) else row.get("id")
+                return self
+
+            if params:
+                self.cur.execute(sql, params)
+            else:
+                self.cur.execute(sql)
+            return self
+        else:
+            if params:
+                self.cur.execute(sql, params)
+            else:
+                self.cur.execute(sql)
+            self.lastrowid = getattr(self.cur, "lastrowid", None)
+            return self
+
+    def fetchone(self):
+        return self.cur.fetchone()
+
+    def fetchall(self):
+        return self.cur.fetchall()
+
+    def __iter__(self):
+        return iter(self.cur)
+
+
+class CompatConnection:
+    def __init__(self, conn, is_postgres=False):
+        self.conn = conn
+        self.is_postgres = is_postgres
+
+    def cursor(self):
+        if self.is_postgres:
+            cur = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        else:
+            cur = self.conn.cursor()
+        return CompatCursor(cur, is_postgres=self.is_postgres)
+
+    def execute(self, sql, params=None):
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        return self.conn.commit()
+
+    def rollback(self):
+        return self.conn.rollback()
+
+    def close(self):
+        return self.conn.close()
+
+
+def get_raw_db():
+    if DATABASE_URL and PSYCOPG2_AVAILABLE:
+        try:
+            pg_url = DATABASE_URL
+            if pg_url.startswith("postgres://"):
+                pg_url = "postgresql://" + pg_url[11:]
+            conn = psycopg2.connect(pg_url, connect_timeout=5)
+            conn.autocommit = False
+            return CompatConnection(conn, is_postgres=True)
+        except Exception as e:
+            print(f"  ⚠️ PostgreSQL/Supabase connection failed ({e}). Falling back to local SQLite.")
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return CompatConnection(conn, is_postgres=False)
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = get_raw_db()
     return g.db
 
 
@@ -55,96 +163,182 @@ def generate_share_code(db):
 
 
 def init_db():
-    db = sqlite3.connect(DB_PATH)
-    db.executescript(
-        """
-        PRAGMA journal_mode = WAL;
-        CREATE TABLE IF NOT EXISTS projects (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            created_at TEXT NOT NULL,
-            closed_loop INTEGER NOT NULL DEFAULT 0,
-            deleted_at TEXT DEFAULT NULL,
-            owner_id INTEGER DEFAULT NULL,
-            share_code TEXT DEFAULT NULL UNIQUE
-        );
-        CREATE TABLE IF NOT EXISTS points (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            seq INTEGER NOT NULL,
-            latitude REAL NOT NULL,
-            longitude REAL NOT NULL,
-            lat_text TEXT NOT NULL,
-            lng_text TEXT NOT NULL,
-            name TEXT NOT NULL DEFAULT '',
-            status INTEGER NOT NULL CHECK (status IN (1,2,3)),
-            remark TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_points_project ON points(project_id, seq);
-        CREATE TABLE IF NOT EXISTS loops (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            point_id INTEGER REFERENCES points(id) ON DELETE CASCADE,
-            loop_no INTEGER NOT NULL DEFAULT 1,
-            name TEXT NOT NULL DEFAULT '',
-            latitude REAL NOT NULL,
-            longitude REAL NOT NULL,
-            lat_text TEXT NOT NULL DEFAULT '',
-            lng_text TEXT NOT NULL DEFAULT '',
-            red_drum_number TEXT NOT NULL DEFAULT '',
-            red_cable_id TEXT NOT NULL DEFAULT '',
-            red_start TEXT NOT NULL DEFAULT '',
-            red_end TEXT NOT NULL DEFAULT '',
-            white_drum_number TEXT NOT NULL DEFAULT '',
-            white_cable_id TEXT NOT NULL DEFAULT '',
-            white_start TEXT NOT NULL DEFAULT '',
-            white_end TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_loops_project ON loops(project_id);
-        CREATE INDEX IF NOT EXISTS idx_loops_point ON loops(point_id);
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user',
-            created_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS project_members (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            joined_at TEXT NOT NULL,
-            UNIQUE(project_id, user_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_pm_user ON project_members(user_id);
-        CREATE INDEX IF NOT EXISTS idx_pm_project ON project_members(project_id);
-        """
-    )
+    db = get_raw_db()
+    if db.is_postgres:
+        with db.conn.cursor() as cur:
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS projects (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                closed_loop INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT DEFAULT NULL,
+                owner_id INTEGER DEFAULT NULL,
+                share_code TEXT DEFAULT NULL UNIQUE
+            );
+            CREATE TABLE IF NOT EXISTS points (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                seq INTEGER NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                lat_text TEXT NOT NULL,
+                lng_text TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                status INTEGER NOT NULL CHECK (status IN (1,2,3)),
+                remark TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_points_project ON points(project_id, seq);
+            CREATE TABLE IF NOT EXISTS loops (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                point_id INTEGER REFERENCES points(id) ON DELETE CASCADE,
+                loop_no INTEGER NOT NULL DEFAULT 1,
+                name TEXT NOT NULL DEFAULT '',
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                lat_text TEXT NOT NULL DEFAULT '',
+                lng_text TEXT NOT NULL DEFAULT '',
+                red_drum_number TEXT NOT NULL DEFAULT '',
+                red_cable_id TEXT NOT NULL DEFAULT '',
+                red_start TEXT NOT NULL DEFAULT '',
+                red_end TEXT NOT NULL DEFAULT '',
+                white_drum_number TEXT NOT NULL DEFAULT '',
+                white_cable_id TEXT NOT NULL DEFAULT '',
+                white_start TEXT NOT NULL DEFAULT '',
+                white_end TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_loops_project ON loops(project_id);
+            CREATE INDEX IF NOT EXISTS idx_loops_point ON loops(point_id);
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS project_members (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                joined_at TEXT NOT NULL,
+                UNIQUE(project_id, user_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_pm_user ON project_members(user_id);
+            CREATE INDEX IF NOT EXISTS idx_pm_project ON project_members(project_id);
+            """)
+        db.commit()
+    else:
+        db.conn.executescript(
+            """
+            PRAGMA journal_mode = WAL;
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                closed_loop INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT DEFAULT NULL,
+                owner_id INTEGER DEFAULT NULL,
+                share_code TEXT DEFAULT NULL UNIQUE
+            );
+            CREATE TABLE IF NOT EXISTS points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                seq INTEGER NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                lat_text TEXT NOT NULL,
+                lng_text TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                status INTEGER NOT NULL CHECK (status IN (1,2,3)),
+                remark TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_points_project ON points(project_id, seq);
+            CREATE TABLE IF NOT EXISTS loops (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                point_id INTEGER REFERENCES points(id) ON DELETE CASCADE,
+                loop_no INTEGER NOT NULL DEFAULT 1,
+                name TEXT NOT NULL DEFAULT '',
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                lat_text TEXT NOT NULL DEFAULT '',
+                lng_text TEXT NOT NULL DEFAULT '',
+                red_drum_number TEXT NOT NULL DEFAULT '',
+                red_cable_id TEXT NOT NULL DEFAULT '',
+                red_start TEXT NOT NULL DEFAULT '',
+                red_end TEXT NOT NULL DEFAULT '',
+                white_drum_number TEXT NOT NULL DEFAULT '',
+                white_cable_id TEXT NOT NULL DEFAULT '',
+                white_start TEXT NOT NULL DEFAULT '',
+                white_end TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_loops_project ON loops(project_id);
+            CREATE INDEX IF NOT EXISTS idx_loops_point ON loops(point_id);
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS project_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                joined_at TEXT NOT NULL,
+                UNIQUE(project_id, user_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_pm_user ON project_members(user_id);
+            CREATE INDEX IF NOT EXISTS idx_pm_project ON project_members(project_id);
+            """
+        )
     # Add deleted_at column if upgrading from older DB
     try:
         db.execute("SELECT deleted_at FROM projects LIMIT 1")
-    except sqlite3.OperationalError:
-        db.execute("ALTER TABLE projects ADD COLUMN deleted_at TEXT DEFAULT NULL")
-        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            db.execute("ALTER TABLE projects ADD COLUMN deleted_at TEXT DEFAULT NULL")
+            db.commit()
+        except Exception:
+            db.rollback()
+
     # Add remark column if upgrading from older DB
     try:
         db.execute("SELECT remark FROM points LIMIT 1")
-    except sqlite3.OperationalError:
-        db.execute("ALTER TABLE points ADD COLUMN remark TEXT NOT NULL DEFAULT ''")
-        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            db.execute("ALTER TABLE points ADD COLUMN remark TEXT NOT NULL DEFAULT ''")
+            db.commit()
+        except Exception:
+            db.rollback()
+
     # Add owner_id and share_code columns if upgrading
     try:
         db.execute("SELECT owner_id FROM projects LIMIT 1")
-    except sqlite3.OperationalError:
-        db.execute("ALTER TABLE projects ADD COLUMN owner_id INTEGER DEFAULT NULL")
-        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            db.execute("ALTER TABLE projects ADD COLUMN owner_id INTEGER DEFAULT NULL")
+            db.commit()
+        except Exception:
+            db.rollback()
+
     try:
         db.execute("SELECT share_code FROM projects LIMIT 1")
-    except sqlite3.OperationalError:
-        db.execute("ALTER TABLE projects ADD COLUMN share_code TEXT DEFAULT NULL")
-        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            db.execute("ALTER TABLE projects ADD COLUMN share_code TEXT DEFAULT NULL")
+            db.commit()
+        except Exception:
+            db.rollback()
 
     # Backfill share_code for any projects without one
     rows_no_code = db.execute("SELECT id FROM projects WHERE share_code IS NULL OR share_code = ''").fetchall()
@@ -156,7 +350,7 @@ def init_db():
     # Seed or update Superadmin account
     admin_email = SUPERADMIN_EMAIL
     admin_pass = SUPERADMIN_PASSWORD
-    existing_admin = db.execute("SELECT id FROM users WHERE email = ? COLLATE NOCASE", (admin_email,)).fetchone()
+    existing_admin = db.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (admin_email,)).fetchone()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if not existing_admin:
         db.execute(
@@ -171,17 +365,22 @@ def init_db():
     db.commit()
 
     # Ensure existing projects belong to superadmin so they remain accessible
-    admin_row = db.execute("SELECT id FROM users WHERE email = ? COLLATE NOCASE", (admin_email,)).fetchone()
+    admin_row = db.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (admin_email,)).fetchone()
     if admin_row:
         admin_id = admin_row[0]
         db.execute("UPDATE projects SET owner_id = ? WHERE owner_id IS NULL", (admin_id,))
         db.execute("""
+            INSERT INTO project_members (project_id, user_id, joined_at)
+            SELECT id, ?, ? FROM projects
+            ON CONFLICT DO NOTHING
+        """ if db.is_postgres else """
             INSERT OR IGNORE INTO project_members (project_id, user_id, joined_at)
             SELECT id, ?, ? FROM projects
         """, (admin_id, now_str))
         db.commit()
 
     db.close()
+
 
 
 def purge_expired():
@@ -252,7 +451,7 @@ def auth_login():
         return jsonify(error="Email and password are required"), 400
 
     db = get_db()
-    user = db.execute("SELECT * FROM users WHERE email = ? COLLATE NOCASE", (email,)).fetchone()
+    user = db.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone()
     if not user:
         return jsonify(error="Invalid email or password"), 401
 
@@ -331,7 +530,7 @@ def admin_create_user():
         return jsonify(error="Password must be at least 4 characters"), 400
 
     db = get_db()
-    existing = db.execute("SELECT id FROM users WHERE email = ? COLLATE NOCASE", (email,)).fetchone()
+    existing = db.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone()
     if existing:
         return jsonify(error="A user with this email/account already exists"), 409
 
@@ -446,7 +645,7 @@ def join_project():
 
     db = get_db()
     proj = db.execute(
-        "SELECT * FROM projects WHERE share_code = ? COLLATE NOCASE AND deleted_at IS NULL",
+        "SELECT * FROM projects WHERE LOWER(share_code) = LOWER(?) AND deleted_at IS NULL",
         (code,)
     ).fetchone()
 
