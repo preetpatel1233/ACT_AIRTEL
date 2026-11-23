@@ -629,12 +629,6 @@
     </div>
 
     <div style="display:flex;align-items:center;gap:6px;flex:none">
-      <button class="iconbtn" id="btnTopChat" title="Project Group Chat" aria-label="Chat" style="position:relative">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-        </svg>
-        <span id="topChatBadge" class="chat-badge" style="display:none">0</span>
-      </button>
       <button class="iconbtn" id="dots" aria-label="Menu" title="Menu">&#8942;</button>
       <button class="iconbtn" id="btnToggleBar" title="Hide top bar" aria-label="Hide bar">▲</button>
     </div>
@@ -1391,7 +1385,8 @@ async function loadProject(refit = true) {
   const d = await api('/api/projects/' + project.id);
   project = d.project; points = d.points; segments = d.segments;
   render(); drawMap(refit);
-  if (isChatOpen) fetchProjectMessages(true);
+  fetchProjectMessages(isChatOpen);
+  startChatBackgroundPolling();
 }
 function render() {
   const pName = project ? project.name : 'GeoTrack';
@@ -2856,18 +2851,43 @@ $('#btnPopManageUsers').onclick = openUserManagement;
 let isChatOpen = false;
 let chatPollTimer = null;
 let lastChatMsgCount = 0;
+let chatBackgroundTimer = null;
+
+function getChatReadKey() {
+  return (project && project.id) ? ('geotrack_chat_read_' + project.id) : null;
+}
+
+function getStoredLastReadMsgId() {
+  const k = getChatReadKey();
+  if (!k) return 0;
+  return parseInt(localStorage.getItem(k) || '0', 10);
+}
+
+function setStoredLastReadMsgId(id) {
+  const k = getChatReadKey();
+  if (k && id != null) {
+    localStorage.setItem(k, id);
+  }
+}
 
 function updateChatBadge(count) {
-  const topBadge = $('#topChatBadge');
   const floatBadge = $('#floatChatBadge');
+  if (!floatBadge) return;
   if (count > 0) {
-    const text = count > 99 ? '99+' : count;
-    if (topBadge) { topBadge.textContent = text; topBadge.style.display = 'inline-block'; }
-    if (floatBadge) { floatBadge.textContent = text; floatBadge.style.display = 'inline-block'; }
+    floatBadge.textContent = count > 99 ? '99+' : count;
+    floatBadge.style.display = 'inline-flex';
   } else {
-    if (topBadge) topBadge.style.display = 'none';
-    if (floatBadge) floatBadge.style.display = 'none';
+    floatBadge.style.display = 'none';
   }
+}
+
+function startChatBackgroundPolling() {
+  if (chatBackgroundTimer) clearInterval(chatBackgroundTimer);
+  chatBackgroundTimer = setInterval(() => {
+    if (project && project.id && currentUser) {
+      fetchProjectMessages(false);
+    }
+  }, 4000);
 }
 
 async function openProjectChat() {
@@ -2883,6 +2903,7 @@ async function openProjectChat() {
   $('#chatOverlay').classList.add('on');
   const groupTitle = (project.name || 'Project') + (project.share_code ? ' (' + project.share_code + ')' : '');
   $('#chatGroupTitle').textContent = groupTitle;
+  updateChatBadge(0);
   await fetchProjectMessages(true);
   setTimeout(() => {
     const inp = $('#chatInput');
@@ -2900,6 +2921,9 @@ function closeProjectChat() {
   if (chatPollTimer) {
     clearInterval(chatPollTimer);
     chatPollTimer = null;
+  }
+  if (project && project.id) {
+    fetchProjectMessages(false);
   }
 }
 
@@ -2940,18 +2964,37 @@ async function fetchProjectMessages(forceScroll = false) {
 
     const messages = res.messages || [];
     const listEl = $('#chatMessagesList');
+
+    if (isChatOpen) {
+      if (messages.length > 0) {
+        setStoredLastReadMsgId(messages[messages.length - 1].id);
+      }
+      updateChatBadge(0);
+    } else {
+      const lastReadId = getStoredLastReadMsgId();
+      let incomingCount = 0;
+      messages.forEach(m => {
+        const isMe = currentUser && (m.user_id === currentUser.id);
+        if (!isMe && m.id > lastReadId) {
+          incomingCount++;
+        }
+      });
+      if (lastReadId === 0) {
+        incomingCount = messages.filter(m => !currentUser || m.user_id !== currentUser.id).length;
+      }
+      updateChatBadge(incomingCount);
+    }
+
     if (!listEl) return;
 
     if (messages.length === 0) {
       listEl.innerHTML = '<div class="chat-empty-state" id="chatEmptyState">💬 No messages yet in this project.<br>Send a message to everyone connected!</div>';
       lastChatMsgCount = 0;
-      updateChatBadge(0);
       return;
     }
 
     const shouldScroll = forceScroll || (messages.length !== lastChatMsgCount);
     lastChatMsgCount = messages.length;
-    updateChatBadge(0);
 
     let html = '';
     messages.forEach(m => {
@@ -2997,10 +3040,13 @@ async function sendChatMessage(e) {
   btnSend.disabled = true;
   try {
     input.value = '';
-    await api('/api/projects/' + project.id + '/messages', {
+    const res = await api('/api/projects/' + project.id + '/messages', {
       method: 'POST',
       body: JSON.stringify({ message: text })
     });
+    if (res && res.message && res.message.id) {
+      setStoredLastReadMsgId(res.message.id);
+    }
     await fetchProjectMessages(true);
   } catch (err) {
     toast('Failed to send: ' + err.message);
@@ -3011,7 +3057,6 @@ async function sendChatMessage(e) {
   }
 }
 
-if ($('#btnTopChat')) $('#btnTopChat').onclick = openProjectChat;
 if ($('#floatMessengerBtn')) $('#floatMessengerBtn').onclick = openProjectChat;
 if ($('#btnChatBack')) $('#btnChatBack').onclick = closeProjectChat;
 if ($('#btnCloseChat')) $('#btnCloseChat').onclick = closeProjectChat;
