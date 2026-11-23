@@ -228,6 +228,16 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_pm_user ON project_members(user_id);
             CREATE INDEX IF NOT EXISTS idx_pm_project ON project_members(project_id);
+            CREATE TABLE IF NOT EXISTS project_messages (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                sender_name TEXT NOT NULL,
+                sender_role TEXT NOT NULL DEFAULT 'user',
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_messages_project ON project_messages(project_id, id);
             """)
         db.commit()
     else:
@@ -295,8 +305,53 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_pm_user ON project_members(user_id);
             CREATE INDEX IF NOT EXISTS idx_pm_project ON project_members(project_id);
+            CREATE TABLE IF NOT EXISTS project_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                sender_name TEXT NOT NULL,
+                sender_role TEXT NOT NULL DEFAULT 'user',
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_messages_project ON project_messages(project_id, id);
             """
         )
+    # Add project_messages table if upgrading
+    try:
+        db.execute("SELECT 1 FROM project_messages LIMIT 1")
+    except Exception:
+        db.rollback()
+        try:
+            if db.is_postgres:
+                db.execute("""
+                CREATE TABLE IF NOT EXISTS project_messages (
+                    id SERIAL PRIMARY KEY,
+                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    sender_name TEXT NOT NULL,
+                    sender_role TEXT NOT NULL DEFAULT 'user',
+                    message TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_messages_project ON project_messages(project_id, id);
+                """)
+            else:
+                db.execute("""
+                CREATE TABLE IF NOT EXISTS project_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    sender_name TEXT NOT NULL,
+                    sender_role TEXT NOT NULL DEFAULT 'user',
+                    message TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_messages_project ON project_messages(project_id, id);
+                """)
+            db.commit()
+        except Exception:
+            db.rollback()
     # Add deleted_at column if upgrading from older DB
     try:
         db.execute("SELECT deleted_at FROM projects LIMIT 1")
@@ -939,6 +994,74 @@ def save_point_loops(pid, pt_id):
         )
     db.commit()
     return jsonify(ok=True, count=len(loops_data))
+
+
+# ---------------------------------------------------------------- project messages (group chat)
+@app.get("/api/projects/<int:pid>/messages")
+def get_project_messages(pid):
+    user_id = session.get("user_id")
+    if not can_access_project(pid, user_id):
+        return jsonify(error="Access denied: Enter the 4-digit Project ID first."), 403
+
+    db = get_db()
+    proj = db.execute("SELECT id, name, share_code FROM projects WHERE id=?", (pid,)).fetchone()
+    if not proj:
+        return jsonify(error="Project not found"), 404
+
+    member_count_row = db.execute("SELECT COUNT(*) FROM project_members WHERE project_id=?", (pid,)).fetchone()
+    member_count = member_count_row[0] if member_count_row else 1
+    member_count = max(1, member_count)
+
+    rows = db.execute(
+        """SELECT id, project_id, user_id, sender_name, sender_role, message, created_at
+           FROM project_messages
+           WHERE project_id = ?
+           ORDER BY id ASC
+           LIMIT 300""",
+        (pid,)
+    ).fetchall()
+
+    return jsonify(
+        ok=True,
+        project={
+            "id": proj["id"],
+            "name": proj["name"],
+            "share_code": proj["share_code"],
+            "member_count": member_count
+        },
+        messages=[dict(r) for r in rows]
+    )
+
+
+@app.post("/api/projects/<int:pid>/messages")
+def send_project_message(pid):
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify(error="Please sign in to send messages"), 401
+    if not can_access_project(pid, user_id):
+        return jsonify(error="Access denied: Enter the 4-digit Project ID first."), 403
+
+    data = request.json or {}
+    text = (data.get("message") or "").strip()
+    if not text:
+        return jsonify(error="Message cannot be empty"), 400
+    if len(text) > 3000:
+        return jsonify(error="Message too long (max 3000 chars)"), 400
+
+    sender_email = session.get("email") or "User"
+    sender_name = sender_email.split("@")[0] if "@" in sender_email else sender_email
+    sender_role = session.get("role") or "user"
+    t = now()
+
+    db = get_db()
+    db.execute(
+        """INSERT INTO project_messages (project_id, user_id, sender_name, sender_role, message, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (pid, user_id, sender_name, sender_role, text, t)
+    )
+    db.commit()
+
+    return jsonify(ok=True)
 
 
 # ---------------------------------------------------------------- exports
