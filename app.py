@@ -525,7 +525,7 @@ def admin_create_user():
     email = (data.get("email") or "").strip()
     password = (data.get("password") or "").strip()
     user_role = (data.get("role") or "user").strip().lower()
-    if user_role not in ("user", "superadmin", "viewer"):
+    if user_role not in ("user", "superadmin", "viewer", "loop"):
         user_role = "user"
 
     if not email or not password:
@@ -566,9 +566,12 @@ def admin_delete_user(uid):
 
 
 # ---------------------------------------------------------------- API
-def check_write_permission():
-    if session.get("role") == "viewer":
+def check_write_permission(allow_loop=False):
+    role = session.get("role")
+    if role == "viewer":
         return jsonify(error="Viewer role is read-only. Action not permitted."), 403
+    if role == "loop" and not allow_loop:
+        return jsonify(error="Loop role can only edit loops. Action not permitted."), 403
     return None
 
 
@@ -895,7 +898,7 @@ def get_point_loops(pid, pt_id):
 
 @app.post("/api/projects/<int:pid>/points/<int:pt_id>/loops")
 def save_point_loops(pid, pt_id):
-    err = check_write_permission()
+    err = check_write_permission(allow_loop=True)
     if err:
         return err
     user_id = session.get("user_id")

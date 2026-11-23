@@ -116,7 +116,7 @@
 
   #finishbar { padding:8px 14px calc(8px + env(safe-area-inset-bottom)); background:#fff; box-shadow:0 -1px 3px rgba(0,0,0,.08); }
 
-  /* Viewer Mode: hide all inputs, add tab, and modification controls */
+  /* Viewer & Loop Mode: hide modification controls not allowed for restricted roles */
   body.viewer-mode button[data-tab="add"],
   body.viewer-mode #s-add,
   body.viewer-mode #finishbar,
@@ -125,7 +125,17 @@
   body.viewer-mode #newProjCard,
   body.viewer-mode .pdel,
   body.viewer-mode .btn-del-search,
-  body.viewer-mode .btn-select-action {
+  body.viewer-mode .btn-select-action,
+  body.loop-mode button[data-tab="add"],
+  body.loop-mode #s-add,
+  body.loop-mode #finishbar,
+  body.loop-mode #btnBin,
+  body.loop-mode #btnRecycleBin,
+  body.loop-mode #newProjCard,
+  body.loop-mode .pdel,
+  body.loop-mode .btn-del-search,
+  body.loop-mode .btn-edit-search,
+  body.loop-mode .btn-select-action {
     display: none !important;
   }
 
@@ -682,6 +692,7 @@
             <option value="user">User (Standard)</option>
             <option value="superadmin">Superadmin</option>
             <option value="viewer">Viewer (Read-only)</option>
+            <option value="loop">Loop Manager (Loops only)</option>
           </select>
         </div>
         <div style="display:flex;align-items:flex-end">
@@ -727,7 +738,7 @@ function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&
 
 /* ---------- tabs ---------- */
 function showTab(name) {
-  if (currentUser && currentUser.role === 'viewer') {
+  if (currentUser && (currentUser.role === 'viewer' || currentUser.role === 'loop')) {
     name = 'loop';
   }
   $$('.tabbtn').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
@@ -970,7 +981,7 @@ async function openPicker() {
       localStorage.setItem(getActivePidKey(), p.id);
       await loadProject();
       $('#projOverlay').classList.remove('on');
-      showTab(currentUser && currentUser.role === 'viewer' ? 'loop' : 'add');
+      showTab(currentUser && (currentUser.role === 'viewer' || currentUser.role === 'loop') ? 'loop' : 'add');
     };
   });
   /* delete project (soft) */
@@ -1092,7 +1103,7 @@ $('#btnJoinSubmit').onclick = async () => {
       $('#newOverlay').classList.remove('on');
       $('#projOverlay').classList.remove('on');
       await loadProject();
-      showTab(currentUser && currentUser.role === 'viewer' ? 'loop' : 'add');
+      showTab(currentUser && (currentUser.role === 'viewer' || currentUser.role === 'loop') ? 'loop' : 'add');
       toast('✅ ' + (res.message || 'Project added!'));
     }
   } catch (err) {
@@ -1392,8 +1403,8 @@ let editingPoint = null;
 
 function openEditPointModal(pt) {
   if (!pt) return;
-  if (currentUser && currentUser.role === 'viewer') {
-    return toast('Viewer accounts cannot edit points');
+  if (currentUser && (currentUser.role === 'viewer' || currentUser.role === 'loop')) {
+    return toast(currentUser.role === 'loop' ? 'Loop accounts can only edit loops, not GPS points' : 'Viewer accounts cannot edit points');
   }
   editingPoint = pt;
   $('#editPointTitle').textContent = '✏️ Edit Point #' + pt.seq;
@@ -1533,7 +1544,7 @@ function renderSearchList(query = '') {
     const selectBtn = item.querySelector('.btn-select-action');
     const doSelect = () => {
       if (pt) {
-        if (currentUser && currentUser.role === 'viewer') {
+        if (currentUser && (currentUser.role === 'viewer' || currentUser.role === 'loop')) {
           $('#searchOverlay').classList.remove('on');
           map.setView([pt.latitude, pt.longitude], Math.max(map.getZoom(), 17));
           openFillLoopModal(pt);
@@ -2006,16 +2017,22 @@ function showLoginModal() {
 
 function applyRolePermissions() {
   const isViewer = currentUser && currentUser.role === 'viewer';
+  const isLoop = currentUser && currentUser.role === 'loop';
+  const restricted = isViewer || isLoop;
+
   document.body.classList.toggle('viewer-mode', isViewer);
+  document.body.classList.toggle('loop-mode', isLoop);
 
   const addTab = $('button[data-tab="add"]');
   const loopTab = $('button[data-tab="loop"]');
   const btnNew = $('#btnNew');
 
-  if (isViewer) {
+  if (restricted) {
     if (addTab) addTab.style.display = 'none';
     if (loopTab) {
-      loopTab.innerHTML = '🗺️ Map & Loops (<span id="tabCount">' + points.length + '</span>)';
+      loopTab.innerHTML = isLoop 
+        ? '➰ Loop Manager (<span id="tabCount">' + points.length + '</span>)'
+        : '🗺️ Map & Loops (<span id="tabCount">' + points.length + '</span>)';
     }
     $('#finishbar').style.display = 'none';
     if (btnNew) btnNew.textContent = '➕ Add / New project';
@@ -2039,6 +2056,7 @@ function setLoggedInUser(user) {
   $('#popUserEmail').textContent = user.email;
   const isSuper = user.role === 'superadmin';
   const isViewer = user.role === 'viewer';
+  const isLoop = user.role === 'loop';
 
   let roleLabel = 'USER';
   let roleBg = '#e3f2fd';
@@ -2055,6 +2073,11 @@ function setLoggedInUser(user) {
     roleBg = '#ede7f6';
     roleColor = '#5e35b1';
     roleIcon = '👁️';
+  } else if (isLoop) {
+    roleLabel = 'LOOP MANAGER';
+    roleBg = '#fff3e0';
+    roleColor = '#e65100';
+    roleIcon = '➰';
   }
 
   $('#popUserRole').textContent = roleLabel;
@@ -2109,7 +2132,7 @@ async function doLoginSubmit(e) {
         try {
           project = { id: +lastPid };
           await loadProject(true);
-          showTab(res.user.role === 'viewer' ? 'loop' : 'add');
+          showTab(res.user.role === 'viewer' || res.user.role === 'loop' ? 'loop' : 'add');
         } catch (_) {
           localStorage.removeItem(getActivePidKey());
           project = null; points = []; segments = []; render(); drawMap(false);
@@ -2177,10 +2200,11 @@ async function loadAdminUsers() {
     listEl.innerHTML = users.map(u => {
       const isSuper = u.role === 'superadmin';
       const isViewer = u.role === 'viewer';
+      const isLoop = u.role === 'loop';
       const isPrimary = u.email.toLowerCase() === 'preet31012005@gmail.com';
-      const roleBg = isSuper ? '#fce4ec' : (isViewer ? '#ede7f6' : '#e3f2fd');
-      const roleCol = isSuper ? '#c2185b' : (isViewer ? '#5e35b1' : '#1565c0');
-      const roleIcon = isSuper ? '👑 ' : (isViewer ? '👁️ ' : '👤 ');
+      const roleBg = isSuper ? '#fce4ec' : (isViewer ? '#ede7f6' : (isLoop ? '#fff3e0' : '#e3f2fd'));
+      const roleCol = isSuper ? '#c2185b' : (isViewer ? '#5e35b1' : (isLoop ? '#e65100' : '#1565c0'));
+      const roleIcon = isSuper ? '👑 ' : (isViewer ? '👁️ ' : (isLoop ? '➰ ' : '👤 '));
       return `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #e0e8f2;border-radius:10px;margin-bottom:6px;background:#fff">
           <div style="flex:1;min-width:0">
@@ -2258,7 +2282,7 @@ showPending();
       try {
         project = { id: +lastPid };
         await loadProject(true);
-        showTab(currentUser.role === 'viewer' ? 'loop' : 'add');
+        showTab(currentUser.role === 'viewer' || currentUser.role === 'loop' ? 'loop' : 'add');
         return;
       } catch (e) {
         localStorage.removeItem(getActivePidKey());
