@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#0d47a1">
 <title>GeoTrack</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -234,11 +234,50 @@
   .toast.on { opacity:1; }
   .pending { background:#fff3e0; color:#e65100; border-radius:10px; padding:10px; font-size:13px; margin-bottom:12px; display:none; }
 
+  /* Header Mode Selector Dropdown */
+  .header-mode-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    max-width: 175px;
+    margin: 0 4px;
+  }
+  .header-mode-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(0, 0, 0, 0.28) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 10px center;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 20px;
+    padding: 6px 28px 6px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    outline: none;
+    width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .header-mode-select:focus, .header-mode-select:active {
+    background-color: rgba(0, 0, 0, 0.42);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+  .header-mode-select option {
+    background: #0d47a1;
+    color: #ffffff;
+    font-size: 14px;
+    padding: 8px;
+  }
+
   /* Messenger & Chat Styles */
   .float-messenger-btn {
     position: fixed;
     right: 16px;
-    bottom: 84px;
+    bottom: calc(68px + env(safe-area-inset-bottom));
     width: 52px;
     height: 52px;
     border-radius: 50%;
@@ -274,36 +313,88 @@
     justify-content: center;
     padding: 0 4px;
     border: 1.5px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
   }
   .chat-badge { top: -4px; right: -4px; }
+
+  /* Chat Sheet & Overlay */
+  .chat-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 6000;
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .chat-overlay.on { display: flex; }
 
   .chat-sheet {
     background: #f8fafc;
     width: 100%;
-    max-width: 480px;
-    height: 85dvh;
-    max-height: 680px;
-    border-radius: 20px 20px 0 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 -8px 30px rgba(0,0,0,0.25);
   }
-  @media (min-width: 600px) {
+  @media (max-width: 600px) {
     .chat-sheet {
-      border-radius: 16px;
-      margin-bottom: 24px;
-      height: 600px;
+      height: 100dvh;
+      max-height: 100dvh;
+      border-radius: 0;
     }
   }
+  @media (min-width: 601px) {
+    .chat-sheet {
+      max-width: 460px;
+      height: 620px;
+      max-height: 85dvh;
+      border-radius: 16px;
+      margin-bottom: 24px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+  }
+
   .chat-header {
     background: #ffffff;
-    padding: 12px 16px;
+    padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
     border-bottom: 1px solid #e2e8f0;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    flex: none;
+    z-index: 10;
+  }
+  .chat-back-btn, .chat-close-btn {
+    border: 0;
+    background: #f1f5f9;
+    color: #334155;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.1s;
+    flex: none;
+  }
+  .chat-back-btn:active, .chat-close-btn:active {
+    background: #e2e8f0;
+    transform: scale(0.92);
+  }
+  .chat-group-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
   }
   .chat-group-icon {
     width: 38px;
@@ -317,6 +408,10 @@
     font-size: 20px;
     flex: none;
   }
+  .chat-group-meta {
+    flex: 1;
+    min-width: 0;
+  }
   .chat-group-title {
     font-weight: 700;
     font-size: 14.5px;
@@ -326,39 +421,30 @@
     text-overflow: ellipsis;
   }
   .chat-group-subtitle {
-    font-size: 11px;
+    font-size: 11.5px;
     color: #64748b;
     margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .chat-close-btn {
-    border: 0;
-    background: #f1f5f9;
-    color: #64748b;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    font-size: 16px;
-    font-weight: 700;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .chat-close-btn:hover { background: #e2e8f0; color: #0f172a; }
+
   .chat-body {
     flex: 1;
     overflow-y: auto;
-    padding: 14px 14px 6px;
+    padding: 14px 14px 8px;
     display: flex;
     flex-direction: column;
     gap: 10px;
     background: #f8fafc;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
   .chat-empty-state {
     margin: auto;
     text-align: center;
     color: #94a3b8;
-    font-size: 13px;
+    font-size: 13.5px;
     line-height: 1.6;
     padding: 30px 10px;
   }
@@ -390,10 +476,15 @@
     border-radius: 4px;
     font-weight: 700;
   }
+  .chat-role-pill.superadmin { background: #fff3e0; color: #e65100; border: 1px solid #ffe0b2; }
+  .chat-role-pill.viewer { background: #ede7f6; color: #512da8; border: 1px solid #d1c4e9; }
+  .chat-role-pill.loop { background: #e0f2f1; color: #00796b; border: 1px solid #b2dfdb; }
+  .chat-role-pill.user { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; }
+
   .chat-msg-bubble {
-    padding: 9px 13px;
-    border-radius: 14px;
-    font-size: 13.5px;
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 14px;
     line-height: 1.45;
     word-break: break-word;
     position: relative;
@@ -401,84 +492,105 @@
   .chat-msg-row.me .chat-msg-bubble {
     background: #1976d2;
     color: #ffffff;
-    border-bottom-right-radius: 3px;
+    border-bottom-right-radius: 4px;
+    box-shadow: 0 1px 3px rgba(25, 118, 210, 0.3);
   }
   .chat-msg-row.other .chat-msg-bubble {
     background: #ffffff;
     color: #1e293b;
     border: 1px solid #e2e8f0;
-    border-bottom-left-radius: 3px;
+    border-bottom-left-radius: 4px;
     box-shadow: 0 1px 2px rgba(0,0,0,0.03);
   }
   .chat-msg-time {
     font-size: 9.5px;
     color: #94a3b8;
-    margin-top: 2px;
+    margin-top: 3px;
     padding: 0 2px;
   }
-  .chat-msg-row.me .chat-msg-time { text-align: right; }
+  .chat-msg-row.me .chat-msg-time {
+    color: rgba(255,255,255,0.75);
+    text-align: right;
+  }
+
   .chat-footer {
     background: #ffffff;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
     border-top: 1px solid #e2e8f0;
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: none;
+    z-index: 10;
+    box-shadow: 0 -2px 6px rgba(0,0,0,0.02);
   }
   .chat-footer input {
     flex: 1;
     background: #f1f5f9;
     border: 1.5px solid #cbd5e1;
-    border-radius: 20px;
-    padding: 9px 14px;
-    font-size: 13.5px;
+    border-radius: 24px;
+    padding: 11px 16px;
+    font-size: 16px !important; /* Prevents auto zoom on mobile */
     color: #0f172a;
     outline: none;
-    transition: border-color 0.15s;
+    box-sizing: border-box;
+    transition: border-color 0.15s, background-color 0.15s;
   }
   .chat-footer input:focus {
     border-color: #1976d2;
     background: #ffffff;
   }
   .chat-send-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
     border-radius: 50%;
     border: 0;
     background: #1976d2;
-    color: #fff;
-    font-size: 16px;
+    color: #ffffff;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     flex: none;
-    transition: transform 0.15s, background-color 0.15s;
+    transition: transform 0.15s, background-color 0.15s, opacity 0.15s;
+    box-shadow: 0 2px 8px rgba(25, 118, 210, 0.4);
   }
   .chat-send-btn:active {
     transform: scale(0.92);
     background: #1565c0;
   }
+  .chat-send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 </style>
 </head>
 <body>
 <div id="app">
-  <!-- Ultra-Compact Perfect Top Bar -->
+  <!-- Ultra-Compact Responsive Top Bar -->
   <header id="topbar">
-    <div style="display:flex;align-items:center;gap:6px">
+    <div style="display:flex;align-items:center;gap:6px;flex:none">
       <button class="iconbtn" id="btnProjectMenu" title="Active Project & Switch" aria-label="Project">📁</button>
       <button class="iconbtn" id="btnProfileMenu" title="Account & Profile" aria-label="Account">👤</button>
+    </div>
+
+    <!-- Unified Mode Dropdown (Add & Loop) -->
+    <div class="header-mode-wrap">
+      <select id="headerModeSelect" class="header-mode-select" aria-label="Select Mode">
+        <option value="add" id="optAdd">📍 Add Point</option>
+        <option value="loop" id="optLoop">🔁 Loop (0)</option>
+      </select>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:6px;flex:none">
       <button class="iconbtn" id="btnTopChat" title="Project Group Chat" aria-label="Chat" style="position:relative">
-        💬<span id="topChatBadge" class="chat-badge" style="display:none">0</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span id="topChatBadge" class="chat-badge" style="display:none">0</span>
       </button>
-    </div>
-
-    <div class="tabs">
-      <button data-tab="add" class="tabbtn on">📍 Add</button>
-      <button data-tab="loop" class="tabbtn">🔁 Loop (<span id="tabCount">0</span>)</button>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:6px">
       <button class="iconbtn" id="dots" aria-label="Menu" title="Menu">&#8942;</button>
       <button class="iconbtn" id="btnToggleBar" title="Hide top bar" aria-label="Hide bar">▲</button>
     </div>
@@ -943,23 +1055,31 @@
 
 <!-- Floating Messenger Button -->
 <button id="floatMessengerBtn" class="float-messenger-btn" title="Project Group Chat" aria-label="Project Chat">
-  <span style="font-size:24px">💬</span>
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+  </svg>
   <span id="floatChatBadge" class="float-chat-badge" style="display:none">0</span>
 </button>
 
 <!-- PROJECT MESSENGER OVERLAY / GROUP CHAT -->
-<div class="overlay" id="chatOverlay" style="z-index:6000">
-  <div class="chat-sheet">
-    <!-- Header -->
+<div class="chat-overlay" id="chatOverlay">
+  <div class="chat-sheet" id="chatSheet">
+    <!-- Header with Back button, Avatar, Title, and Close button -->
     <div class="chat-header">
-      <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+      <button id="btnChatBack" class="chat-back-btn" title="Back" aria-label="Back">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+      </button>
+      <div class="chat-group-info">
         <div class="chat-group-icon">📁</div>
-        <div style="min-width:0;flex:1">
+        <div class="chat-group-meta">
           <div class="chat-group-title" id="chatGroupTitle">Project Group</div>
           <div class="chat-group-subtitle" id="chatGroupSubtitle">👥 Connected Members</div>
         </div>
       </div>
-      <button id="btnCloseChat" class="chat-close-btn" title="Close Chat">✕</button>
+      <button id="btnCloseChat" class="chat-close-btn" title="Close Chat" aria-label="Close">✕</button>
     </div>
 
     <!-- Messages List -->
@@ -972,7 +1092,11 @@
     <!-- Input Bar -->
     <form class="chat-footer" id="chatForm" onsubmit="return false">
       <input type="text" id="chatInput" placeholder="Type a message to project group..." autocomplete="off">
-      <button type="submit" id="btnSendMsg" class="chat-send-btn" title="Send Message">➤</button>
+      <button type="submit" id="btnSendMsg" class="chat-send-btn" title="Send Message" aria-label="Send">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="transform: translateX(1px)">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </button>
     </form>
   </div>
 </div>
@@ -1001,18 +1125,25 @@ async function api(url, opts = {}) {
 }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-/* ---------- tabs ---------- */
+/* ---------- tabs & mode selector ---------- */
 function showTab(name) {
   if (currentUser && (currentUser.role === 'viewer' || currentUser.role === 'loop')) {
     name = 'loop';
   }
   $$('.tabbtn').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   $$('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + name));
+  const modeSel = $('#headerModeSelect');
+  if (modeSel && modeSel.value !== name) {
+    modeSel.value = name;
+  }
   $('#mainPanel').scrollTop = 0;
-  setTimeout(() => { map.invalidateSize(); fitMap(); }, 60);
-  setTimeout(() => { map.invalidateSize(); }, 200);
+  setTimeout(() => { if (typeof map !== 'undefined' && map) { map.invalidateSize(); fitMap(); } }, 60);
+  setTimeout(() => { if (typeof map !== 'undefined' && map) map.invalidateSize(); }, 200);
 }
 $$('.tabbtn').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+if ($('#headerModeSelect')) {
+  $('#headerModeSelect').onchange = (e) => showTab(e.target.value);
+}
 
 /* ---------- topbar toggle (hide/show) ---------- */
 $('#btnToggleBar').onclick = () => {
@@ -1206,6 +1337,13 @@ function render() {
   if ($('#popProjCount')) $('#popProjCount').textContent = pCount + ' point' + (pCount === 1 ? '' : 's') + ' recorded';
   if ($('#hCount')) $('#hCount').textContent = pCount;
   if ($('#tabCount')) $('#tabCount').textContent = pCount;
+  const optLoop = $('#optLoop');
+  if (optLoop) {
+    const isLoop = currentUser && currentUser.role === 'loop';
+    const isViewer = currentUser && currentUser.role === 'viewer';
+    const loopLabel = isLoop ? '➰ Loop Manager' : isViewer ? '🗺️ Map & Loops' : '🔁 Loop';
+    optLoop.textContent = `${loopLabel} (${pCount})`;
+  }
   if ($('#stPts')) $('#stPts').textContent = pCount;
   if ($('#stLm')) $('#stLm').textContent = points.filter(p => p.status !== 2).length;
   if ($('#stLn')) $('#stLn').textContent = segments.length;
@@ -2291,23 +2429,34 @@ function applyRolePermissions() {
 
   const addTab = $('button[data-tab="add"]');
   const loopTab = $('button[data-tab="loop"]');
+  const optAdd = $('#optAdd');
+  const optLoop = $('#optLoop');
+  const modeSel = $('#headerModeSelect');
   const btnNew = $('#btnNew');
 
   if (restricted) {
     if (addTab) addTab.style.display = 'none';
+    if (optAdd) optAdd.style.display = 'none';
+    const loopLabel = isLoop 
+      ? '➰ Loop Manager (' + points.length + ')'
+      : '🗺️ Map & Loops (' + points.length + ')';
     if (loopTab) {
       loopTab.innerHTML = isLoop 
         ? '➰ Loop Manager (<span id="tabCount">' + points.length + '</span>)'
         : '🗺️ Map & Loops (<span id="tabCount">' + points.length + '</span>)';
     }
+    if (optLoop) optLoop.textContent = loopLabel;
+    if (modeSel) modeSel.value = 'loop';
     $('#finishbar').style.display = 'none';
     if (btnNew) btnNew.textContent = '➕ Add / New project';
     showTab('loop');
   } else {
     if (addTab) addTab.style.display = '';
+    if (optAdd) optAdd.style.display = '';
     if (loopTab) {
       loopTab.innerHTML = '🔁 Loop (<span id="tabCount">' + points.length + '</span>)';
     }
+    if (optLoop) optLoop.textContent = '🔁 Loop (' + points.length + ')';
     $('#finishbar').style.display = '';
     if (btnNew) btnNew.textContent = '➕ Add / New project';
   }
@@ -2569,8 +2718,11 @@ async function openProjectChat() {
   $('#chatOverlay').classList.add('on');
   const groupTitle = (project.name || 'Project') + (project.share_code ? ' (' + project.share_code + ')' : '');
   $('#chatGroupTitle').textContent = groupTitle;
-  $('#chatInput').focus();
   await fetchProjectMessages(true);
+  setTimeout(() => {
+    const inp = $('#chatInput');
+    if (inp && window.innerWidth > 600) inp.focus();
+  }, 100);
   if (chatPollTimer) clearInterval(chatPollTimer);
   chatPollTimer = setInterval(() => {
     if (isChatOpen) fetchProjectMessages(false);
@@ -2696,9 +2848,20 @@ async function sendChatMessage(e) {
 
 if ($('#btnTopChat')) $('#btnTopChat').onclick = openProjectChat;
 if ($('#floatMessengerBtn')) $('#floatMessengerBtn').onclick = openProjectChat;
+if ($('#btnChatBack')) $('#btnChatBack').onclick = closeProjectChat;
 if ($('#btnCloseChat')) $('#btnCloseChat').onclick = closeProjectChat;
 if ($('#chatForm')) $('#chatForm').onsubmit = sendChatMessage;
 if ($('#btnSendMsg')) $('#btnSendMsg').onclick = sendChatMessage;
+
+const chatOverlayEl = $('#chatOverlay');
+if (chatOverlayEl) {
+  chatOverlayEl.addEventListener('click', (e) => {
+    if (e.target === chatOverlayEl) closeProjectChat();
+  });
+}
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && isChatOpen) closeProjectChat();
+});
 
 /* ---------- start ---------- */
 showPending();
