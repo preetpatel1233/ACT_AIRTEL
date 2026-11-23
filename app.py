@@ -187,7 +187,9 @@ def init_db():
                 name TEXT NOT NULL DEFAULT '',
                 status INTEGER NOT NULL CHECK (status IN (1,2,3)),
                 remark TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                item_type TEXT NOT NULL DEFAULT '',
+                item_code TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_points_project ON points(project_id, seq);
             CREATE TABLE IF NOT EXISTS loops (
@@ -264,7 +266,9 @@ def init_db():
                 name TEXT NOT NULL DEFAULT '',
                 status INTEGER NOT NULL CHECK (status IN (1,2,3)),
                 remark TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                item_type TEXT NOT NULL DEFAULT '',
+                item_code TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_points_project ON points(project_id, seq);
             CREATE TABLE IF NOT EXISTS loops (
@@ -370,6 +374,18 @@ def init_db():
         db.rollback()
         try:
             db.execute("ALTER TABLE points ADD COLUMN remark TEXT NOT NULL DEFAULT ''")
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    # Add item_type and item_code columns to points if upgrading
+    try:
+        db.execute("SELECT item_type FROM points LIMIT 1")
+    except Exception:
+        db.rollback()
+        try:
+            db.execute("ALTER TABLE points ADD COLUMN item_type TEXT NOT NULL DEFAULT ''")
+            db.execute("ALTER TABLE points ADD COLUMN item_code TEXT NOT NULL DEFAULT ''")
             db.commit()
         except Exception:
             db.rollback()
@@ -854,10 +870,18 @@ def add_point(pid):
 
         cur_seq += 1
         remark = (d.get("remark") or "").strip()
+        item_type = (d.get("item_type") or "").strip()
+        item_code = (d.get("item_code") or "").strip()
+        name = (d.get("name") or "").strip()
+        if not name and item_code:
+            name = item_code
+        if not item_code and name:
+            item_code = name
         db.execute(
             """INSERT INTO points(project_id, seq, latitude, longitude, lat_text, lng_text,
-                                  name, status, remark, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (pid, cur_seq, lat, lng, lat_text, lng_text, (d.get("name") or "").strip(), status, remark, now()),
+                                  name, status, remark, created_at, item_type, item_code)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (pid, cur_seq, lat, lng, lat_text, lng_text, name, status, remark, now(), item_type, item_code),
         )
     db.commit()
     return jsonify(ok=True, seq=cur_seq)
@@ -890,12 +914,18 @@ def update_point(point_id):
 
     name = (data.get("name") or "").strip()
     remark = (data.get("remark") or "").strip()
+    item_type = (data.get("item_type") or "").strip()
+    item_code = (data.get("item_code") or "").strip()
+    if not name and item_code:
+        name = item_code
+    if not item_code and name:
+        item_code = name
 
     db.execute(
         """UPDATE points 
-           SET latitude=?, longitude=?, lat_text=?, lng_text=?, name=?, status=?, remark=?
+           SET latitude=?, longitude=?, lat_text=?, lng_text=?, name=?, status=?, remark=?, item_type=?, item_code=?
            WHERE id=?""",
-        (lat, lng, lat_text, lng_text, name, status, remark, point_id),
+        (lat, lng, lat_text, lng_text, name, status, remark, item_type, item_code, point_id),
     )
     # Keep loop records in sync if coordinates or name changed
     db.execute(
