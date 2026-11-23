@@ -697,23 +697,30 @@
 
         <div class="row">
           <div style="flex:1">
-            <label for="pointType" style="font-weight:700">Type</label>
+            <label for="status">Status</label>
+            <select id="status">
+              <option value="1">1. Landmark + Line</option>
+              <option value="2">2. Line only</option>
+              <option value="3">3. End</option>
+            </select>
+          </div>
+          <div style="flex:1">
+            <label for="pointType">Type</label>
             <select id="pointType">
               <option value="CH">Chamber (CH)</option>
               <option value="CP">Coupler (CP)</option>
               <option value="EX-CH">EX-CH</option>
             </select>
           </div>
-          <div style="flex:1.2">
-            <label for="pointValue" style="font-weight:700">Value</label>
-            <div class="namewrap">
-              <input id="pointValue" placeholder="MH1" autocomplete="off" style="font-weight:700;color:var(--pri)">
-              <button class="mic" id="btnMic" aria-label="Speak name">🎤</button>
-            </div>
+        </div>
+
+        <div>
+          <label for="name">Name</label>
+          <div class="namewrap">
+            <input id="name" placeholder="MH1" autocomplete="off" style="font-weight:700">
+            <button class="mic" id="btnMic" aria-label="Speak name">🎤</button>
           </div>
         </div>
-        <input type="hidden" id="status" value="1">
-        <input type="hidden" id="name" value="">
 
         <div style="height:6px"></div>
 
@@ -972,6 +979,14 @@
 
     <div class="row">
       <div style="flex:1">
+        <label for="editStatus">Status</label>
+        <select id="editStatus">
+          <option value="1">1 — Landmark + Line</option>
+          <option value="2">2 — Line only</option>
+          <option value="3">3 — End (break line)</option>
+        </select>
+      </div>
+      <div style="flex:1">
         <label for="editType">Type</label>
         <select id="editType">
           <option value="CH">Chamber (CH)</option>
@@ -979,12 +994,12 @@
           <option value="EX-CH">EX-CH</option>
         </select>
       </div>
-      <div style="flex:1.2">
-        <label for="editName">Value</label>
-        <input id="editName" placeholder="e.g. MH1" autocomplete="off" style="font-weight:700;color:var(--pri)">
-      </div>
     </div>
-    <input type="hidden" id="editStatus" value="1">
+
+    <div>
+      <label for="editName">Name</label>
+      <input id="editName" placeholder="e.g. MH1" autocomplete="off" style="font-weight:700">
+    </div>
 
     <label for="editRemark">Remark</label>
     <input id="editRemark" placeholder="e.g. Road crossing, pole, etc." autocomplete="off">
@@ -1479,17 +1494,21 @@ function getNextItemCode(type) {
 
 function updateAutoPointValue() {
   const typeSel = $('#pointType');
-  const valInp = $('#pointValue');
-  if (!typeSel || !valInp) return;
-  valInp.value = getNextItemCode(typeSel.value);
+  const nameInp = $('#name');
+  if (!typeSel || !nameInp) return;
+  const autoCode = getNextItemCode(typeSel.value);
+  const cur = nameInp.value.trim();
+  if (!cur || /^MH\d+$/i.test(cur) || /^CP-\d+$/i.test(cur) || cur === 'EX-CH') {
+    nameInp.value = autoCode;
+  }
 }
 
 if ($('#pointType')) {
   $('#pointType').onchange = () => {
     const typeSel = $('#pointType');
-    const valInp = $('#pointValue');
-    if (typeSel && valInp) {
-      valInp.value = getNextItemCode(typeSel.value);
+    const nameInp = $('#name');
+    if (typeSel && nameInp) {
+      nameInp.value = getNextItemCode(typeSel.value);
     }
   };
 }
@@ -2138,18 +2157,17 @@ $('#btnNext').onclick = async () => {
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return toast('Latitude / longitude out of range');
 
   const itemType = $('#pointType') ? $('#pointType').value : 'CH';
-  let itemCode = ($('#pointValue') ? $('#pointValue').value : '').trim();
-  if (!itemCode) {
-    itemCode = getNextItemCode(itemType);
-  }
+  const autoCode = getNextItemCode(itemType);
+  const nameVal = ($('#name') ? $('#name').value : '').trim() || autoCode;
+  const statusVal = $('#status') ? +$('#status').value : 1;
 
   const newPointEntry = {
     latitude: lat,
     longitude: lng,
-    status: $('#status') ? +$('#status').value : 1,
-    name: itemCode,
+    status: statusVal,
+    name: nameVal,
     item_type: itemType,
-    item_code: itemCode,
+    item_code: autoCode,
     remark: ""
   };
 
@@ -2180,9 +2198,10 @@ $('#btnNext').onclick = async () => {
       toast('🔗 Point #' + reconnectedSeq + ' ("Already added") & new point saved! Line connected.');
       clearReconnectMode();
     } else {
-      toast('Saved ✔ Next point ready (' + itemCode + ')');
+      toast('Saved ✔ Next point ready (' + nameVal + ')');
       $('#lat').value = '';
       $('#lng').value = '';
+      if ($('#name')) $('#name').value = '';
     }
     if (newPointEntry.status === 3 && $('#status')) $('#status').value = '1';
   } catch (e) {
