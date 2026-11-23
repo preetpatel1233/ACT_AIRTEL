@@ -1548,9 +1548,6 @@ function renderSearchList(query = '') {
     if (selectBtn) selectBtn.onclick = doSelect;
   });
 }
-    if (selectBtn) selectBtn.onclick = doSelect;
-  });
-}
 
 $('#btnSearch').onclick = () => {
   if (!project) return openPicker();
@@ -2078,9 +2075,9 @@ function setLoggedInUser(user) {
   applyRolePermissions();
 }
 
-// Login form submit
-$('#formLogin').onsubmit = async (e) => {
-  e.preventDefault();
+// Login handler
+async function doLoginSubmit(e) {
+  if (e && e.preventDefault) e.preventDefault();
   const email = $('#loginEmail').value.trim();
   const password = $('#loginPassword').value.trim();
   const errBox = $('#loginError');
@@ -2128,7 +2125,10 @@ $('#formLogin').onsubmit = async (e) => {
     btn.disabled = false;
     btn.textContent = '🔐 Sign In';
   }
-};
+}
+
+$('#formLogin').onsubmit = doLoginSubmit;
+$('#btnLoginSubmit').onclick = doLoginSubmit;
 
 // Password eye toggle
 $('#btnToggleLoginPwd').onclick = () => {
