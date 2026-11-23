@@ -452,6 +452,10 @@ def auth_login():
 
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email,)).fetchone()
+    if not user and "@" not in email:
+        user = db.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email + "@gmail.com",)).fetchone()
+    elif not user and "@" in email:
+        user = db.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email.split("@")[0],)).fetchone()
     if not user:
         return jsonify(error="Invalid email or password"), 401
 
