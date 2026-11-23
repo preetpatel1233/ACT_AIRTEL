@@ -163,8 +163,37 @@
     font-size:12px; color:#e65100;
   }
   .btn-cancel-rc {
-    border:0; background:#e65100; color:#fff; font-size:11px; font-weight:700;
-    border-radius:6px; padding:4px 8px; cursor:pointer; flex:none;
+    border:0; background:#e65100; color:#fff; font-size:12px; font-weight:700;
+    border-radius:6px; padding:5px 8px; cursor:pointer; flex:none;
+  }
+  .btn-edit-rc {
+    border:0; background:#0288d1; color:#fff; font-size:11.5px; font-weight:700;
+    border-radius:6px; padding:5px 10px; cursor:pointer; flex:none; display:inline-flex;
+    align-items:center; gap:3px;
+  }
+  .btn-edit-rc:active { background:#01579b; }
+  .numbered-marker-wrapper {
+    background: transparent !important;
+    border: none !important;
+  }
+  .numbered-marker-pin {
+    color: #ffffff;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.45);
+    user-select: none;
+    line-height: 1;
+    transition: transform 0.15s ease;
+  }
+  .numbered-marker-pin:hover {
+    transform: scale(1.18);
   }
   .badge-remark {
     display:inline-block; background:#fff3e0; color:#e65100; border:1px solid #ffe0b2;
@@ -299,14 +328,18 @@
 
         <!-- Reconnect indicator banner (automatic static remark "Already added") -->
         <div id="reconnectBanner" class="reconnect-banner" style="display:none">
-          <div style="flex:1">
-            <div style="font-weight:700;font-size:12px">🔗 Connecting from Point #<span id="rcSeq"></span>: <span id="rcName"></span></div>
-            <div style="font-size:11px;color:#b71c1c;margin-top:2px">
-              ✓ Point #<span id="rcSeq2"></span> will be added to SQL/Excel as <b>"Already added"</b>.<br>
-              Enter your <b>NEW point</b> Lat, Long & Name below:
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              🔗 Point #<span id="rcSeq"></span>: <span id="rcName"></span>
+            </div>
+            <div style="font-size:11px;color:#b71c1c;margin-top:2px;line-height:1.35">
+              ✓ Connecting from this point. Enter your <b>NEW point</b> below:
             </div>
           </div>
-          <button id="btnCancelReconnect" class="btn-cancel-rc" type="button" title="Cancel reconnection">✕ Cancel</button>
+          <div style="display:flex;align-items:center;gap:6px;flex:none">
+            <button id="btnEditReconnectPoint" class="btn-edit-rc" type="button" title="Edit this point's name, lat/long & status">✏️ Edit</button>
+            <button id="btnCancelReconnect" class="btn-cancel-rc" type="button" title="Cancel reconnection">✕</button>
+          </div>
         </div>
 
         <!-- Action Bar: Previous | Search | Next -->
@@ -507,6 +540,43 @@
     <div id="searchList" style="max-height:50vh;overflow-y:auto"></div>
     <div style="height:12px"></div>
     <button class="btn sec" id="btnSearchClose">Cancel</button>
+  </div>
+</div>
+
+<div class="overlay" id="editPointOverlay">
+  <div class="sheet">
+    <h2 id="editPointTitle">✏️ Edit Point</h2>
+    <p>Modify latitude, longitude, landmark name or status.</p>
+
+    <div class="row">
+      <div>
+        <label for="editLat">Latitude</label>
+        <input id="editLat" inputmode="decimal" placeholder="23.524650" autocomplete="off">
+      </div>
+      <div>
+        <label for="editLng">Longitude</label>
+        <input id="editLng" inputmode="decimal" placeholder="87.301240" autocomplete="off">
+      </div>
+    </div>
+
+    <label for="editName">Landmark / Point name</label>
+    <input id="editName" placeholder="e.g. Near Pole 12 or Junction" autocomplete="off">
+
+    <label for="editStatus">Status / Type</label>
+    <select id="editStatus">
+      <option value="1">1 — Landmark + Line</option>
+      <option value="2">2 — Line only</option>
+      <option value="3">3 — End (break line)</option>
+    </select>
+
+    <label for="editRemark">Remark</label>
+    <input id="editRemark" placeholder="e.g. Road crossing, pole, etc." autocomplete="off">
+
+    <div style="height:14px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn sec" id="btnEditPointCancel" type="button" style="flex:1">Cancel</button>
+      <button class="btn ok" id="btnEditPointSave" type="button" style="flex:2;font-size:14.5px;font-weight:700">💾 Save Changes</button>
+    </div>
   </div>
 </div>
 
@@ -804,13 +874,19 @@ function drawMap(refit = true) {
   segments.forEach(seg => L.polyline(seg, { color: '#29b6f6', weight: 4, opacity: .95 }).addTo(group));
   points.forEach(p => {
     const isLandmark = (p.status === 1 || p.status === 3);
-    const m = L.circleMarker([p.latitude, p.longitude], {
-      radius: isLandmark ? 8 : 6,
-      color: '#ffffff',
-      weight: 2.5,
-      fillColor: isLandmark ? '#e53935' : '#1565c0',
-      fillOpacity: 1
-    }).addTo(group);
+    const pinColor = isLandmark ? '#e53935' : '#1565c0';
+    const num = p.seq != null ? p.seq : '';
+
+    const icon = L.divIcon({
+      className: 'numbered-marker-wrapper',
+      html: `<div class="numbered-marker-pin" style="background-color:${pinColor}">
+        ${num}
+      </div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11]
+    });
+
+    const m = L.marker([p.latitude, p.longitude], { icon }).addTo(group);
 
     /* Show the landmark NAME permanently on the map, with loop indicator if loops exist */
     const baseName = (p.name && p.name.trim()) ? p.name.trim() : '#' + p.seq;
@@ -821,7 +897,7 @@ function drawMap(refit = true) {
       permanent: isLandmark,
       direction: 'top',
       className: 'landmark-label',
-      offset: [0, -8],
+      offset: [0, -12],
       interactive: true
     });
 
@@ -1305,6 +1381,78 @@ $('#btnCancelReconnect').onclick = () => {
   toast('Reconnection cancelled');
 };
 
+$('#btnEditReconnectPoint').onclick = () => {
+  if (reconnectPoint) {
+    openEditPointModal(reconnectPoint);
+  }
+};
+
+/* ---------- edit point modal ---------- */
+let editingPoint = null;
+
+function openEditPointModal(pt) {
+  if (!pt) return;
+  if (currentUser && currentUser.role === 'viewer') {
+    return toast('Viewer accounts cannot edit points');
+  }
+  editingPoint = pt;
+  $('#editPointTitle').textContent = '✏️ Edit Point #' + pt.seq;
+  $('#editLat').value = (pt.latitude !== undefined && pt.latitude !== null) ? pt.latitude : '';
+  $('#editLng').value = (pt.longitude !== undefined && pt.longitude !== null) ? pt.longitude : '';
+  $('#editName').value = pt.name || '';
+  $('#editStatus').value = pt.status || 1;
+  $('#editRemark').value = pt.remark || '';
+  $('#editPointOverlay').classList.add('on');
+}
+
+function closeEditPointModal() {
+  editingPoint = null;
+  $('#editPointOverlay').classList.remove('on');
+}
+
+$('#btnEditPointCancel').onclick = closeEditPointModal;
+
+$('#btnEditPointSave').onclick = async () => {
+  if (!editingPoint) return;
+  const latStr = $('#editLat').value.trim().replace(',', '.');
+  const lngStr = $('#editLng').value.trim().replace(',', '.');
+  const lat = parseFloat(latStr);
+  const lng = parseFloat(lngStr);
+  if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return toast('Please enter valid Latitude & Longitude');
+  }
+  const status = parseInt($('#editStatus').value, 10);
+  const name = $('#editName').value.trim();
+  const remark = $('#editRemark').value.trim();
+
+  try {
+    await api('/api/points/' + editingPoint.id, {
+      method: 'PUT',
+      body: JSON.stringify({
+        latitude: lat,
+        longitude: lng,
+        status: status,
+        name: name,
+        remark: remark
+      })
+    });
+    toast('Point #' + editingPoint.seq + ' updated successfully! ✔');
+    const updatedId = editingPoint.id;
+    closeEditPointModal();
+
+    await loadProject(false);
+
+    if (reconnectPoint && reconnectPoint.id === updatedId) {
+      const updatedPt = points.find(p => p.id === updatedId);
+      if (updatedPt) {
+        setReconnectMode(updatedPt);
+      }
+    }
+  } catch (err) {
+    toast('Error updating point: ' + (err.message || 'Failed'));
+  }
+};
+
 /* ---------- PREVIOUS BUTTON ---------- */
 $('#btnPrev').onclick = () => {
   if (!project) return openPicker();
@@ -1341,6 +1489,7 @@ function renderSearchList(query = '') {
         ${p.remark ? `<span class="badge-remark">${esc(p.remark)}</span>` : ''}
         <div style="font-size:11px;color:var(--mut);margin-top:2px">${esc(p.lat_text)}, ${esc(p.lng_text)} · ${L_[p.status]}</div>
       </div>
+      <button class="btn sec btn-edit-search" style="width:auto;padding:6px 9px;font-size:12px;flex:none;margin-right:6px" title="Edit point">✏️ Edit</button>
       <button class="btn sec btn-loop-action" style="width:auto;padding:6px 10px;font-size:12px;flex:none;margin-right:6px">➰ Loop${p.loop_count ? ' (' + p.loop_count + ')' : ''}</button>
       <button class="btn ok btn-select-action" style="width:auto;padding:6px 12px;font-size:12px;flex:none;margin-right:6px">Select</button>
       <button class="del btn-del-search" data-del="${p.id}" aria-label="Delete" style="flex:none;padding:4px 6px">🗑</button>
@@ -1350,6 +1499,15 @@ function renderSearchList(query = '') {
   $$('.search-item').forEach(item => {
     const pid = item.dataset.id;
     const pt = points.find(p => p.id == pid);
+    /* edit modal */
+    const editBtn = item.querySelector('.btn-edit-search');
+    if (editBtn) {
+      editBtn.onclick = (e) => {
+        e.stopPropagation();
+        $('#searchOverlay').classList.remove('on');
+        openEditPointModal(pt);
+      };
+    }
     /* loop modal */
     const loopBtn = item.querySelector('.btn-loop-action');
     if (loopBtn) {
@@ -1387,6 +1545,9 @@ function renderSearchList(query = '') {
       }
     };
     if (selectArea) selectArea.onclick = doSelect;
+    if (selectBtn) selectBtn.onclick = doSelect;
+  });
+}
     if (selectBtn) selectBtn.onclick = doSelect;
   });
 }

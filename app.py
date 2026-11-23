@@ -801,6 +801,51 @@ def add_point(pid):
     return jsonify(ok=True, seq=cur_seq)
 
 
+@app.put("/api/points/<int:point_id>")
+def update_point(point_id):
+    err = check_write_permission()
+    if err:
+        return err
+    user_id = session.get("user_id")
+    db = get_db()
+    pt = db.execute("SELECT * FROM points WHERE id=?", (point_id,)).fetchone()
+    if not pt:
+        return jsonify(error="Point not found"), 404
+    if not can_access_project(pt["project_id"], user_id):
+        return jsonify(error="Access denied: Enter the 4-digit Project ID first."), 403
+
+    data = request.json or {}
+    try:
+        lat_text = str(data["latitude"]).strip().replace(",", ".")
+        lng_text = str(data["longitude"]).strip().replace(",", ".")
+        lat, lng = float(lat_text), float(lng_text)
+        status = int(data["status"])
+    except (KeyError, ValueError, TypeError):
+        return jsonify(error="Latitude, longitude and status are required"), 400
+
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180) or status not in (1, 2, 3):
+        return jsonify(error="Invalid latitude / longitude / status"), 400
+
+    name = (data.get("name") or "").strip()
+    remark = (data.get("remark") or "").strip()
+
+    db.execute(
+        """UPDATE points 
+           SET latitude=?, longitude=?, lat_text=?, lng_text=?, name=?, status=?, remark=?
+           WHERE id=?""",
+        (lat, lng, lat_text, lng_text, name, status, remark, point_id),
+    )
+    # Keep loop records in sync if coordinates or name changed
+    db.execute(
+        """UPDATE loops 
+           SET latitude=?, longitude=?, lat_text=?, lng_text=?, name=?
+           WHERE point_id=?""",
+        (lat, lng, lat_text, lng_text, name, point_id),
+    )
+    db.commit()
+    return jsonify(ok=True)
+
+
 @app.delete("/api/points/<int:point_id>")
 def delete_point(point_id):
     err = check_write_permission()
