@@ -873,10 +873,9 @@ def add_point(pid):
         item_type = (d.get("item_type") or "").strip()
         item_code = (d.get("item_code") or "").strip()
         name = (d.get("name") or "").strip()
-        if not name and item_code:
-            name = item_code
-        if not item_code and name:
-            item_code = name
+        # Name is strictly manual input: never auto-fill name from item_code
+        if not item_code and item_type:
+            item_code = item_type
         db.execute(
             """INSERT INTO points(project_id, seq, latitude, longitude, lat_text, lng_text,
                                   name, status, remark, created_at, item_type, item_code)
@@ -916,10 +915,9 @@ def update_point(point_id):
     remark = (data.get("remark") or "").strip()
     item_type = (data.get("item_type") or "").strip()
     item_code = (data.get("item_code") or "").strip()
-    if not name and item_code:
-        name = item_code
-    if not item_code and name:
-        item_code = name
+    # Name is strictly manual input: never auto-fill name from item_code
+    if not item_code and item_type:
+        item_code = item_type
 
     db.execute(
         """UPDATE points 
@@ -932,7 +930,7 @@ def update_point(point_id):
         """UPDATE loops 
            SET latitude=?, longitude=?, lat_text=?, lng_text=?, name=?
            WHERE point_id=?""",
-        (lat, lng, lat_text, lng_text, name, point_id),
+        (lat, lng, lat_text, lng_text, name or item_code, point_id),
     )
     db.commit()
     return jsonify(ok=True)

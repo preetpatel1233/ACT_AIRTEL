@@ -682,16 +682,19 @@
     <!-- ADD (DEFAULT SCREEN - ULTRA COMPACT) -->
     <section class="screen on" id="s-add">
       <div class="card">
-        <button class="btn gps" id="btnGps">🎯 Get LatLong</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn gps" id="btnGps" style="flex:1">🎯 Get LatLong</button>
+          <span id="gpsAccuracyBadge" style="display:none;font-size:11.5px;font-weight:700;padding:6px 10px;border-radius:8px;background:#e8f5e9;color:#1b5e20;white-space:nowrap">🎯 ±3m</span>
+        </div>
 
         <div class="row">
           <div>
             <label for="lat">Latitude</label>
-            <input id="lat" inputmode="decimal" placeholder="23.524650" autocomplete="off">
+            <input id="lat" inputmode="decimal" placeholder="23.5246500" autocomplete="off">
           </div>
           <div>
             <label for="lng">Longitude</label>
-            <input id="lng" inputmode="decimal" placeholder="72.485500" autocomplete="off">
+            <input id="lng" inputmode="decimal" placeholder="72.4855000" autocomplete="off">
           </div>
         </div>
 
@@ -705,7 +708,10 @@
             </select>
           </div>
           <div style="flex:1">
-            <label for="pointType">Type</label>
+            <label for="pointType" style="display:flex;align-items:center;justify-content:space-between">
+              <span>Type</span>
+              <span id="typeAutoBadge" style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;background:#e3f2fd;color:#0d47a1" title="Assigned item code">MH1</span>
+            </label>
             <select id="pointType">
               <option value="CH">Chamber (CH)</option>
               <option value="CP">Coupler (CP)</option>
@@ -717,7 +723,7 @@
         <div>
           <label for="name">Name</label>
           <div class="namewrap">
-            <input id="name" placeholder="MH1" autocomplete="off" style="font-weight:700">
+            <input id="name" placeholder="Name / mic (optional)" autocomplete="off">
             <button class="mic" id="btnMic" aria-label="Speak name">🎤</button>
           </div>
         </div>
@@ -1473,43 +1479,49 @@ function getNextItemCode(type) {
   if (type === 'EX-CH') return 'EX-CH';
 
   let count = 0;
+  let maxNum = 0;
   if (points && points.length) {
     points.forEach(p => {
       const pType = (p.item_type || '').toUpperCase();
-      const nm = (p.name || '').trim().toUpperCase();
-      if (type === 'CH' && (pType === 'CH' || (!pType && (/^MH\d+/i.test(nm) || /^CH\d+/i.test(nm))))) {
+      const code = (p.item_code || p.name || '').trim().toUpperCase();
+      if (type === 'CH' && (pType === 'CH' || (!pType && (/^MH\d+/i.test(code) || /^CH\d+/i.test(code))))) {
         count++;
-      } else if (type === 'CP' && (pType === 'CP' || (!pType && /^CP-\d+/i.test(nm)))) {
+        const m = code.match(/^(?:MH|CH)(\d+)/i);
+        if (m) {
+          const num = parseInt(m[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      } else if (type === 'CP' && (pType === 'CP' || (!pType && /^CP-?\d+/i.test(code)))) {
         count++;
+        const m = code.match(/^CP-?(\d+)/i);
+        if (m) {
+          const num = parseInt(m[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
       }
     });
   }
+  const nextNum = Math.max(count + 1, maxNum + 1);
   if (type === 'CH') {
-    return 'MH' + (count + 1);
+    return 'MH' + nextNum;
   } else if (type === 'CP') {
-    return 'CP-' + (count + 1);
+    return 'CP-' + nextNum;
   }
   return 'EX-CH';
 }
 
 function updateAutoPointValue() {
   const typeSel = $('#pointType');
-  const nameInp = $('#name');
-  if (!typeSel || !nameInp) return;
-  const autoCode = getNextItemCode(typeSel.value);
-  const cur = nameInp.value.trim();
-  if (!cur || /^MH\d+$/i.test(cur) || /^CP-\d+$/i.test(cur) || cur === 'EX-CH') {
-    nameInp.value = autoCode;
+  const badge = $('#typeAutoBadge');
+  if (typeSel && badge) {
+    badge.textContent = getNextItemCode(typeSel.value);
   }
+  // Name input is strictly for manual entry: NEVER touch or set $('#name').value!
 }
 
 if ($('#pointType')) {
   $('#pointType').onchange = () => {
-    const typeSel = $('#pointType');
-    const nameInp = $('#name');
-    if (typeSel && nameInp) {
-      nameInp.value = getNextItemCode(typeSel.value);
-    }
+    updateAutoPointValue();
   };
 }
 
@@ -1776,14 +1788,31 @@ function showGpsHelp() {
 
 function startGps(highAccuracy) {
   const b = $('#btnGps');
+  const badge = $('#gpsAccuracyBadge');
   let done = false;
   let best = null;         // single best reading (by accuracy)
   let settled = false;     // did we fill lat/lng at least once?
 
   function accept(lat, lng, acc) {
-    $('#lat').value = lat.toFixed(6);
-    $('#lng').value = lng.toFixed(6);
+    // 7 decimal digits gives precision to ~1.1 centimeter
+    $('#lat').value = Number(lat.toFixed(7)).toString();
+    $('#lng').value = Number(lng.toFixed(7)).toString();
     settled = true;
+    if (badge) {
+      const roundedAcc = Math.round(acc);
+      badge.textContent = '🎯 ±' + roundedAcc + 'm';
+      badge.style.display = 'inline-block';
+      if (roundedAcc <= 4) {
+        badge.style.background = '#e8f5e9';
+        badge.style.color = '#1b5e20';
+      } else if (roundedAcc <= 12) {
+        badge.style.background = '#e3f2fd';
+        badge.style.color = '#0d47a1';
+      } else {
+        badge.style.background = '#fff3e0';
+        badge.style.color = '#e65100';
+      }
+    }
   }
 
   function finish(msg, ms) {
@@ -1792,15 +1821,19 @@ function startGps(highAccuracy) {
     clearTimeout(refineTimer);
     b.disabled = false; b.textContent = '🎯 Get LatLong';
     if (settled) {
-      toast('📍 Location set (±' + Math.round(best.coords.accuracy) + ' m)', 2500);
+      const acc = Math.round(best.coords.accuracy);
+      toast('📍 Perfect fix! Location set (±' + acc + ' m)', 2500);
+      if (typeof map !== 'undefined' && map && best.coords) {
+        try { map.panTo([best.coords.latitude, best.coords.longitude]); } catch (e) {}
+      }
     } else if (msg) {
       toast(msg, ms || 3500);
     }
   }
 
-  b.textContent = highAccuracy ? '⏳ Getting GPS...' : '⏳ Getting location...';
+  b.textContent = highAccuracy ? '⏳ Getting high-precision GPS...' : '⏳ Getting location...';
 
-  /* Auto-finish 3 s after first accepted reading (gives time to refine) */
+  /* Auto-finish 4 s after first accepted reading (gives phone GNSS chip time to lock extra satellites) */
   let refineTimer = null;
 
   gpsWatch = navigator.geolocation.watchPosition(pos => {
@@ -1813,21 +1846,19 @@ function startGps(highAccuracy) {
       b.textContent = '⏳ Refining... ±' + Math.round(acc) + ' m';
     }
 
-    /* Very accurate → finish immediately */
-    if (acc <= 15) { finish(); return; }
+    /* Pinpoint accuracy <= 3m → ideal GNSS lock, finish immediately */
+    if (acc <= 3) { finish(); return; }
 
-    /* Start a 3-second settle timer after first reading.
-       If a better reading comes in, the lat/lng updates,
-       but we don't wait forever. */
+    /* Give 4 seconds to settle and refine to highest satellite accuracy */
     if (!refineTimer) {
-      refineTimer = setTimeout(() => finish(), 3000);
+      refineTimer = setTimeout(() => finish(), 4000);
     }
 
   }, err => {
     /* If high-accuracy failed, auto-retry with low accuracy (WiFi/cell) */
     if (highAccuracy && !settled) {
       if (gpsWatch !== null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; }
-      b.textContent = '⏳ Trying WiFi location...';
+      b.textContent = '⏳ Trying network location...';
       startGps(false);
       return;
     }
@@ -1839,21 +1870,20 @@ function startGps(highAccuracy) {
       if (settled) finish();
       else finish('Could not get location — check Location is ON.', 4000);
     }
-  }, { enableHighAccuracy: highAccuracy, timeout: 10000, maximumAge: 2000 });
+  }, { enableHighAccuracy: highAccuracy, timeout: 12000, maximumAge: 0 });
 
-  /* Hard timeout: use whatever we have after 12 s */
+  /* Hard timeout: use whatever best fix we have after 14 s */
   setTimeout(() => {
     if (!done) {
       if (settled) finish();
       else if (highAccuracy) {
-        /* GPS hardware timed out — fall back to WiFi/cell */
         if (gpsWatch !== null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; }
         startGps(false);
       } else {
         finish('Could not get location — check Location is ON.', 4000);
       }
     }
-  }, 12000);
+  }, 14000);
 }
 
 $('#btnGps').onclick = () => {
@@ -2158,14 +2188,14 @@ $('#btnNext').onclick = async () => {
 
   const itemType = $('#pointType') ? $('#pointType').value : 'CH';
   const autoCode = getNextItemCode(itemType);
-  const nameVal = ($('#name') ? $('#name').value : '').trim() || autoCode;
+  const manualName = ($('#name') ? $('#name').value : '').trim();
   const statusVal = $('#status') ? +$('#status').value : 1;
 
   const newPointEntry = {
     latitude: lat,
     longitude: lng,
     status: statusVal,
-    name: nameVal,
+    name: manualName,
     item_type: itemType,
     item_code: autoCode,
     remark: ""
@@ -2198,10 +2228,12 @@ $('#btnNext').onclick = async () => {
       toast('🔗 Point #' + reconnectedSeq + ' ("Already added") & new point saved! Line connected.');
       clearReconnectMode();
     } else {
-      toast('Saved ✔ Next point ready (' + nameVal + ')');
+      const displayLabel = manualName ? `${autoCode} (${manualName})` : autoCode;
+      toast('Saved ✔ Next point ready (' + displayLabel + ')');
       $('#lat').value = '';
       $('#lng').value = '';
       if ($('#name')) $('#name').value = '';
+      if ($('#gpsAccuracyBadge')) $('#gpsAccuracyBadge').style.display = 'none';
     }
     if (newPointEntry.status === 3 && $('#status')) $('#status').value = '1';
   } catch (e) {
